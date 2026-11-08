@@ -73,7 +73,7 @@ sudo bash deploy/backup.sh
 sudo bash deploy/verify-backup.sh # restores the latest MySQL dump into an isolated temporary database
 ```
 
-Backups dump MySQL and PostgreSQL transactionally where supported, compress them, and upload them to private Blob Storage using managed identity. Artifacts already live in Blob Storage. A root cron job runs backups daily at 02:15 UTC. Blob lifecycle retention is 14 days for backups, with 7-day soft delete. The runtime `.env` is backed up separately in Key Vault; database dumps do not contain it. The MySQL restore check passed with 3,000 training samples. The PostgreSQL dump was uploaded but has not been restore-tested. Restore into an isolated database first, validate counts and predictions, and only then switch the application connection string. Never run `docker compose down -v` against this deployment: that removes database volumes.
+Backups dump MySQL and PostgreSQL transactionally where supported, compress them, and upload them to private Blob Storage using managed identity. Artifacts already live in Blob Storage. A root cron job runs backups daily at 02:15 UTC. Blob lifecycle retention is 14 days for backups, with 7-day soft delete. The runtime `.env` is backed up separately in Key Vault; database dumps do not contain it. The active benchmark MySQL restore check passed with 6,588 training samples; the earlier original-demo restore passed with 3,000. The PostgreSQL dump was uploaded but has not been restore-tested. Restore into an isolated database first, validate counts and predictions, and only then switch the application connection string. Never run `docker compose down -v` against this deployment: that removes database volumes.
 
 ## Cost and delivery limits
 
