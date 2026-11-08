@@ -26,6 +26,7 @@ from src.features.engineering import (
     build_preprocessor,
     log_feature_importance,
 )
+from src.training.threshold import ThresholdClassifier, select_threshold
 
 logger = logging.getLogger(__name__)
 
@@ -153,7 +154,10 @@ def train_model(
         if isinstance(X_train, pd.DataFrame):
             model = Pipeline([("preprocessor", build_preprocessor()), ("classifier", model)])
         model.fit(X_train, y_train)
+        threshold = select_threshold(y_val, model.predict_proba(X_val)[:, 1])
+        model = ThresholdClassifier(model, threshold)
         mlflow.log_params(params)
+        mlflow.log_params({"decision_threshold": threshold, "threshold_objective": "validation_f1"})
         example = X_train.iloc[:3] if isinstance(X_train, pd.DataFrame) else X_train[:3]
         mlflow.sklearn.log_model(
             model,
@@ -161,6 +165,7 @@ def train_model(
             input_example=example,
             signature=mlflow.models.infer_signature(example, model.predict(example)),
             pip_requirements=["scikit-learn==1.4.2", "pandas==2.2.1", "numpy==1.26.4"],
+            code_paths=["src"],
         )
 
         # Evaluate on validation set

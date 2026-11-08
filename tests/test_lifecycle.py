@@ -154,6 +154,7 @@ def test_real_upload_train_predict_feedback_monitor_and_rejection(database, tmp_
                 label = int(row.pop("churn"))
                 response = client.post("/predict", json=row.to_dict())
                 assert response.status_code == 200, response.text
+                assert response.json()["decision_threshold"] == result["decision_threshold"]
                 prediction_id = response.json()["prediction_id"]
                 feedback = client.post(
                     "/feedback", json={"prediction_id": prediction_id, "actual_label": label}

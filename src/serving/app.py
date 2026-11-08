@@ -143,6 +143,7 @@ def predict(request: PredictRequest):
             prediction_id=prediction_id,
             prediction=prediction,
             probability=probability,
+            decision_threshold=float(getattr(model.model, "threshold", 0.5)),
             model_name=model.name,
             model_version=str(model.version),
         )
@@ -205,6 +206,7 @@ def status():
         **store.overview(),
         "last_result": store.get_state("last_result"),
         "serving_version": str(_loaded_model.version) if _loaded_model else None,
+        "serving_model": _loaded_model.name if _loaded_model else None,
     }
 
 

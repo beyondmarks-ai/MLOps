@@ -56,6 +56,7 @@ class PredictResponse(BaseModel):
     prediction_id: str = Field(..., description="ID for submitting the actual outcome")
     prediction: int = Field(..., description="Binary churn prediction (0=No, 1=Yes)")
     probability: float = Field(..., description="Probability of churn")
+    decision_threshold: float = Field(0.5, description="Stored model threshold used for the class")
     model_name: str = Field(..., description="Model registry name")
     model_version: str = Field(..., description="Model version used")
 

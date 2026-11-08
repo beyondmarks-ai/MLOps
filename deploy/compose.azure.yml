@@ -19,7 +19,7 @@ x-airflow: &airflow
   environment:
     DATABASE_URL: ${DATABASE_URL}
     MLFLOW_TRACKING_URI: http://mlflow:5000
-    MODEL_NAME: ChurnModel
+    MODEL_NAME: ${MODEL_NAME:-ChurnModel}
     HPO_TRIALS: ${HPO_TRIALS:-3}
     HPO_TIMEOUT: ${HPO_TIMEOUT:-90}
     MIN_MODEL_AUC: ${MIN_MODEL_AUC:-0.55}
@@ -104,7 +104,7 @@ services:
     environment:
       DATABASE_URL: ${DATABASE_URL}
       MLFLOW_TRACKING_URI: http://mlflow:5000
-      MODEL_NAME: ChurnModel
+      MODEL_NAME: ${MODEL_NAME:-ChurnModel}
       API_KEY: ${API_KEY}
       ADMIN_API_KEY: ${ADMIN_API_KEY}
       MODEL_REFRESH_SECONDS: ${MODEL_REFRESH_SECONDS:-30}

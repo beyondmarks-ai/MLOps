@@ -70,8 +70,10 @@ EXPECTED_CATEGORIES: dict[str, list[str]] = {
         "Mailed check",
         "Bank transfer (automatic)",
         "Credit card (automatic)",
+        "Bank Withdrawal",
+        "Credit Card",
     ],
-    "internet_service": ["DSL", "Fiber optic", "No"],
+    "internet_service": ["DSL", "Fiber optic", "Cable", "No"],
 }
 
 MAX_NULL_RATE = 0.05  # 5% max null rate per column

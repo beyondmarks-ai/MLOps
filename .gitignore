@@ -52,6 +52,7 @@ mlruns/
 # Data (keep directory structure)
 data/raw/*/
 data/processed/
+data/benchmarks/
 !data/raw/.gitkeep
 !data/processed/.gitkeep
 

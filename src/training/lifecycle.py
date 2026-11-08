@@ -82,9 +82,17 @@ def run_cycle():
         test_metrics = compute_full_metrics(
             y_test, model.predict(X_test), model.predict_proba(X_test)[:, 1]
         )
+        default_metrics = compute_full_metrics(
+            y_test,
+            (model.predict_proba(X_test)[:, 1] >= 0.5).astype(int),
+            model.predict_proba(X_test)[:, 1],
+        )
         comparison = [{"model": c[3], "run_id": c[1], **c[2]} for c in candidates]
         with mlflow.start_run(run_id=run_id):
             mlflow.log_metrics({f"test_{k}": v for k, v in test_metrics.items()})
+            mlflow.log_metrics(
+                {f"default_threshold_test_{k}": v for k, v in default_metrics.items()}
+            )
             mlflow.log_dict(comparison, "model_comparison.json")
             with tempfile.TemporaryDirectory() as directory:
                 path = Path(directory) / "reference.csv"
@@ -116,8 +124,10 @@ def run_cycle():
             "decision": "promoted" if accepted else "rejected",
             "version": str(version),
             "model": model_type,
+            "decision_threshold": float(model.threshold),
             "run_id": run_id,
             "test_metrics": test_metrics,
+            "default_threshold_test_metrics": default_metrics,
             "candidates": comparison,
             "previous_version": str(versions[0].version) if versions else None,
         }
