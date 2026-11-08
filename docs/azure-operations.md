@@ -79,6 +79,19 @@ Backups dump MySQL and PostgreSQL transactionally where supported, compress them
 
 The checked Azure public Linux compute rate was US$0.21/hour (about US$153.30 per 730-hour month), excluding disks, IP, storage, network, taxes and any subscription discounts. Credit balance and expiration could not be inferred from the enabled subscription. Deallocate when the demo is not needed; budgets alone do not stop resources.
 
-The project is published at `https://github.com/beyondmarks-ai/MLOps`; the signed-in account has owner access. CI runs on pushes and pull requests. The manual Azure CLI deployment works independently of GitHub. Azure OIDC deployment has not yet been configured. The dispatch-only GitHub deployment workflow requires a repository owner to configure `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, and `AZURE_SUBSCRIPTION_ID` variables and an Azure federated identity restricted to `repo:beyondmarks-ai/MLOps:ref:refs/heads/main`, with VM execution permission scoped to this VM. It downloads only the reviewed public commit. The original repository remains available as the local `upstream` remote; `origin` points to `beyondmarks-ai/MLOps`.
+The project is published at `https://github.com/beyondmarks-ai/MLOps`; CI runs on pushes and pull requests. The manual Azure CLI deployment also works independently of GitHub.
+
+### GitHub OIDC deployment
+
+Open **Actions ? Deploy to Azure VM ? Run workflow**, select `main`, and run it. It installs dependencies, runs lint/tests, signs into Azure using a short-lived GitHub OIDC token, and deploys the exact selected commit through Azure VM Run Command. Both API containers and public HTTPS must pass health checks before success is reported. An already running VM remains running; a stopped VM is temporarily started and then deallocated, including on normal deployment failure. No stored Azure password, SSH key, or client secret is sent to GitHub.
+
+Configured identity: `id-github-churn-deploy` in `rg-churn-mlops`, client ID `ffccd29e-54bd-461c-8a78-4899baaac798`. Federated credential `github-main` trusts issuer `https://token.actions.githubusercontent.com`, audience `api://AzureADTokenExchange`, and exact subject `repo:beyondmarks-ai/MLOps:ref:refs/heads/main`. Other branches cannot authenticate with it.
+
+Custom role `Churn MLOps GitHub deployer` is assigned only on `churn-mlops-vm`. It permits VM read, instance-view read, start, deallocate and Run Command. It cannot modify RBAC or other Azure resources. Run Command executes as root on this VM, so protect write access to `main`: trusted deployment code can access the VM's runtime configuration and managed identity.
+
+Repository variables `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, and `AZURE_SUBSCRIPTION_ID` hold public identifiers, not secrets. The workflow is deliberately manual so each source push does not start billable compute. It serializes deployment runs. If a runner is force-killed, loses Azure connectivity, or shutdown itself fails, verify the VM state with the Windows launcher and stop it if needed; `finally` cleanup cannot guarantee shutdown under those conditions.
+
+Implementation: `.github/workflows/cd.yml`, `scripts/github_deploy.py`, `deploy/github-release.sh`. Guest script completion is checked explicitly because Run Command can return CLI success for a failed shell command. Checkout files retain the `mlops` owner so the existing SSH deployment path continues to work. The original source repository remains the local `upstream` remote.
+
 
 Remaining operational limits: no cross-VM high availability, no independently verified uptime SLA, and no guarantee of accuracy on real customer data. Scale/load and backup checks are demonstration evidence, not a production certification.

@@ -22,10 +22,10 @@ jobs:
         run: pip install ruff==0.4.2
 
       - name: Lint with ruff
-        run: ruff check src/ dags/ tests/
+        run: ruff check src/ dags/ tests/ scripts/
 
       - name: Check formatting
-        run: ruff format --check src/ dags/ tests/
+        run: ruff format --check src/ dags/ tests/ scripts/
 
   test:
     name: Test
@@ -85,7 +85,7 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Build monitoring image (no push)
+      - name: Build Airflow image (no push)
         uses: docker/build-push-action@v5
         with:
           context: .

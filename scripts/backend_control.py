@@ -16,7 +16,7 @@ VM_NAME = "churn-mlops-vm"
 APP_URL = "https://churn-mlops-617db570.centralindia.cloudapp.azure.com"
 
 
-def azure(*arguments):
+def azure(*arguments, timeout=90):
     executable = shutil.which("az")
     if not executable:
         raise RuntimeError("Azure CLI is missing. Install it, then run az login in PowerShell.")
@@ -35,7 +35,7 @@ def azure(*arguments):
         ],
         capture_output=True,
         text=True,
-        timeout=90,
+        timeout=timeout,
         creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
     )
     if result.returncode:
