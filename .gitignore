@@ -64,7 +64,6 @@ monitoring/evidently_reports/*/
 !monitoring/evidently_reports/.gitkeep
 
 # Docker
-.dockerignore
 
 # IDE
 .idea/
@@ -83,3 +82,7 @@ k8s/secrets.yaml
 # Temp files
 /tmp/
 *.tmp
+.azure-local/
+data/*.db
+data/predictions.csv
+mlflow.db

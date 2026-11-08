@@ -16,16 +16,16 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.10"
+          python-version: "3.11"
 
       - name: Install ruff
         run: pip install ruff==0.4.2
 
       - name: Lint with ruff
-        run: ruff check src/ tests/
+        run: ruff check src/ dags/ tests/
 
       - name: Check formatting
-        run: ruff format --check src/ tests/
+        run: ruff format --check src/ dags/ tests/
 
   test:
     name: Test
@@ -37,7 +37,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.10"
+          python-version: "3.11"
 
       - name: Cache pip
         uses: actions/cache@v4
@@ -47,11 +47,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install --upgrade pip
-          pip install pytest pytest-cov pytest-asyncio httpx
-          pip install scikit-learn==1.4.2 pandas==2.2.1 numpy==1.26.4
-          pip install fastapi==0.111.0 uvicorn[standard]==0.29.0 pydantic==2.7.0
-          pip install evidently==0.4.22 requests==2.31.0
+          pip install -r requirements.txt
 
       - name: Run tests with coverage
         run: |
@@ -83,7 +79,7 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: .
-          file: docker/Dockerfile.serving
+          file: docker/Dockerfile.runtime
           push: false
           tags: mlops-serving:pr-${{ github.event.pull_request.number }}
           cache-from: type=gha
@@ -93,7 +89,7 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: .
-          file: docker/Dockerfile.monitoring
+          file: docker/Dockerfile.orchestrator
           push: false
           tags: mlops-monitoring:pr-${{ github.event.pull_request.number }}
           cache-from: type=gha

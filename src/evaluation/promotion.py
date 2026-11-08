@@ -2,7 +2,6 @@
 
 import logging
 import os
-from typing import Dict, Optional, Tuple
 
 import mlflow
 import mlflow.sklearn
@@ -18,7 +17,7 @@ MODEL_REGISTRY_NAME = os.getenv("MODEL_NAME", "ChurnModel")
 PROMOTION_AUC_DELTA = float(os.getenv("PROMOTION_AUC_DELTA", "0.01"))  # 1% improvement
 
 
-def load_production_model(model_name: str = MODEL_REGISTRY_NAME) -> Optional[object]:
+def load_production_model(model_name: str = MODEL_REGISTRY_NAME) -> object | None:
     """Load the current Production model from MLflow registry.
 
     Args:
@@ -46,9 +45,9 @@ def load_production_model(model_name: str = MODEL_REGISTRY_NAME) -> Optional[obj
             mv.run_id,
         )
         return model
-    except Exception as exc:
-        logger.error("Failed to load Production model: %s", exc)
-        return None
+    except Exception:
+        logger.exception("Failed to load Production model; refusing unverified promotion")
+        raise
 
 
 def compare_models(
@@ -56,7 +55,7 @@ def compare_models(
     challenger: object,
     X_holdout: np.ndarray,
     y_holdout: np.ndarray,
-) -> Tuple[Dict[str, float], Dict[str, float], bool]:
+) -> tuple[dict[str, float], dict[str, float], bool]:
     """Compare champion and challenger on a holdout set.
 
     Args:
@@ -79,7 +78,16 @@ def compare_models(
 
     champ_auc = champ_metrics["champion_auc"]
     chal_auc = chal_metrics["challenger_auc"]
-    should_promote = bool(chal_auc > champ_auc + PROMOTION_AUC_DELTA)
+    # Recover from a classifier that never identifies churn without reducing ranking quality.
+    recovers_churn_detection = (
+        champ_metrics["champion_recall"] == 0
+        and chal_metrics["challenger_recall"] > 0
+        and chal_auc >= champ_auc
+    )
+    should_promote = bool(
+        chal_metrics["challenger_recall"] > 0
+        and (chal_auc > champ_auc + PROMOTION_AUC_DELTA or recovers_churn_detection)
+    )
 
     logger.info(
         "Champion AUC=%.4f | Challenger AUC=%.4f | Delta=%.4f | Promote=%s",
@@ -104,23 +112,12 @@ def promote_model(
     mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
     client = MlflowClient()
 
-    # Archive current Production versions
-    current_prod = client.get_latest_versions(model_name, stages=["Production"])
-    for mv in current_prod:
-        client.transition_model_version_stage(
-            name=model_name,
-            version=mv.version,
-            stage="Archived",
-            archive_existing_versions=False,
-        )
-        logger.info("Archived Production model '%s' version %s", model_name, mv.version)
-
-    # Promote challenger
+    # Let the registry archive the incumbent as part of the promotion request.
     client.transition_model_version_stage(
         name=model_name,
         version=challenger_version,
         stage="Production",
-        archive_existing_versions=False,
+        archive_existing_versions=True,
     )
     logger.info(
         "Promoted model '%s' version %s to Production",
@@ -135,7 +132,7 @@ def run_promotion_logic(
     X_holdout: np.ndarray,
     y_holdout: np.ndarray,
     model_name: str = MODEL_REGISTRY_NAME,
-) -> Dict[str, object]:
+) -> dict[str, object]:
     """Full promotion flow: load champion → compare → optionally promote.
 
     Args:

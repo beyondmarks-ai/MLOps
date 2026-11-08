@@ -1,0 +1,31 @@
+# Current coverage against report02.pdf
+
+Updated 2026-11-08 after implementation and Azure deployment. Page references refer to the 18-page [report](../report02.pdf). The [original comparison](report02-coverage.md) remains as the historical baseline.
+
+| Report requirement | Pages | Current coverage | Evidence / remaining work |
+|---|---|---|---|
+| File, database and API ingestion | 2, 11, 13, 16 | Implemented | CSV, operator-configured SQL and HTTPS JSON adapters in `src/data/sources.py`; adapters tested. External customer sources still need their actual connection configuration. |
+| User dataset upload | 5 | Implemented | Authenticated dashboard and CSV endpoint validate, save and queue training transactionally. |
+| MySQL data storage | 9, 12, 13 | Mostly covered | Validated feature records, labels, predictions, feedback and queue are in MySQL. Transformed feature matrices are computed during training, not separately persisted in MySQL. Fitted preprocessing lives with the model artifact. |
+| Validation, cleaning and missing values | 2, 11, 13 | Implemented | Schema/range/type checks, deduplication, median/mode imputation, scaling and categorical encoding. Invalid labels and conflicting examples fail visibly. |
+| Train multiple algorithms | 2, 11, 13, 15, 16 | Live verified | Random Forest, Gradient Boosting and Logistic Regression train in one lifecycle; comparisons are saved in MLflow. |
+| Optuna hyperparameter tuning | 2, 11, 13, 16 | Live verified | All three algorithms are tuned; deployment uses three trials per algorithm for a credit-conscious demonstration. |
+| Evaluate and select models | 2, 11, 13, 15 | Live verified | Accuracy, precision, recall, F1 and AUC. Validation selects among candidates detecting churn; holdout gates promotion. Class balancing prevents the former all-negative classifier from winning on accuracy alone. |
+| Real-time FastAPI predictions | 2, 5, 11, 14 | Live verified | Public HTTPS, two API instances, full preprocessing/classifier artifacts, model version and prediction ID returned. 150 synthetic requests completed successfully. |
+| Drift and production performance | 2, 5, 8, 14, 16 | Live verified | Ten-minute monitoring uses model-specific reference data and actual feedback; the demonstration detected both feature drift and an AUC drop. Small windows are explicitly marked insufficient. |
+| Automatic retraining after changes | 2, 5, 8, 11, 14–16 | Live verified | Monitoring request completed on the normal 05:30 schedule; candidate 4 was rejected while model 3 kept serving. Upload/new data and monitoring write durable requests; Airflow consumes every five minutes. Real feedback needs at least 100 rows and 10 per class to enter training; unlabeled predictions never become training labels. |
+| Automatic model replacement | 8, 14–16 | Live verified | Model 3 replaced model 1 after the evaluation gate; both APIs refresh from the registry. Failed loads retain the current model; administrator rollback is implemented. |
+| Airflow orchestration | 2, 9, 12 | Live verified | Four DAGs for ingestion, weekly training, queued retraining and monitoring. No DAG import errors. LocalExecutor replaces the old unused Celery configuration. |
+| Version history and reproducibility | 2, 5, 11 | Live verified | MLflow parameters, metrics, comparison artifacts, versioned models and reference data; artifacts stored in private Azure Blob Storage. |
+| Docker and modular Python stack | 7, 9, 11, 12, 17 | Implemented | Canonical Compose deployment; isolated data/training/evaluation/serving/monitoring modules; Linux container test suite and lint checks. |
+| Secure endpoints and data | 11 | Implemented with limits | TLS, separate prediction/admin keys, private databases/artifacts, managed identity and Key Vault config backup. No per-person login, tenant isolation or penetration-test claim. |
+| Multiple users and low latency | 10, 11, 16 | Demonstrated at small scale | Transactional storage and two APIs; four concurrent clients measured about 204 ms p95 including network. Not a capacity or sustained-load certification. |
+| Large datasets / distributed processing | 1, 10, 11, 16 | Not implemented | Training uses in-memory pandas/scikit-learn on a 4-vCPU, 16-GiB VM. Use Azure ML jobs with appropriate compute for larger workloads; redesign ingestion in batches before claiming distributed processing. |
+| Reliability and continuous availability | 11 | Partial | Health checks, restart policies, three-attempt retry limits, daily private backups, MySQL restore test. One VM remains a failure domain; add redundant app hosts and managed databases for an uptime requirement. |
+| Hardware, cost and portability | 9, 10 | Measured in part | Azure Ubuntu deployment and Windows development checks. Compute list price $0.21/hour plus extras. Minimum hardware, macOS operation and credit expiry are unverified. |
+| CI/CD (repository addition) | — | Published, deployment setup pending | CI tests/builds and dispatch-only Azure OIDC deployment are published to `beyondmarks-ai/MLOps`. Repository access is available; Azure federation and variables still need configuration. Direct CLI deployment works. |
+| Real-time streaming | 17 | Future scope | Report calls this a future enhancement. Add Event Hubs/stream processing only for an actual streaming source. |
+
+The core automated churn lifecycle is running. The report's broader distributed-processing and continuous-availability claims are not fully satisfied by this single-VM deployment. [Validation evidence](validation.md) separates measured results from remaining limitations; [operations](azure-operations.md) explains access, recovery and costs.
+
+For a real application, first collect representative labeled data, define minimum precision/recall and acceptable error costs, and validate on an untouched time-based benchmark. Start a separate application database for real data so the demonstration's synthetic rows are not mixed into training. Then choose capacity and availability targets; move application data to Azure Database for MySQL and metadata to Azure Database for PostgreSQL, run serving across multiple hosts (or Azure Container Apps), and use Azure ML compute if training outgrows this VM. Configure the Azure federation and repository variables to activate the prepared GitHub deployment workflow.

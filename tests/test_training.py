@@ -1,9 +1,9 @@
 """Tests for training, evaluation, and promotion modules (MLflow mocked)."""
 
+from unittest.mock import MagicMock, patch
+
 import numpy as np
-import pandas as pd
 import pytest
-from unittest.mock import MagicMock, patch, call
 from sklearn.ensemble import RandomForestClassifier
 
 from src.data.ingestion import generate_synthetic_churn_data, split_dataset
@@ -24,6 +24,7 @@ def small_xy(tmp_path):
 # ──────────────────────────────────────────────────────────────────────────────
 # src/training/train.py
 # ──────────────────────────────────────────────────────────────────────────────
+
 
 class TestComputeMetrics:
     def test_returns_all_keys(self, small_xy):
@@ -78,15 +79,21 @@ class TestTrainModel:
         mock_active.__enter__ = MagicMock(return_value=mock_run)
         mock_active.__exit__ = MagicMock(return_value=False)
 
-        with patch("mlflow.set_tracking_uri"), \
-             patch("mlflow.set_experiment"), \
-             patch("mlflow.sklearn.autolog"), \
-             patch("mlflow.start_run", return_value=mock_active), \
-             patch("mlflow.log_metric"), \
-             patch("mlflow.log_artifact"):
-
+        with (
+            patch("mlflow.set_tracking_uri"),
+            patch("mlflow.set_experiment"),
+            patch("mlflow.sklearn.autolog"),
+            patch("mlflow.log_params"),
+            patch("mlflow.sklearn.log_model"),
+            patch("mlflow.start_run", return_value=mock_active),
+            patch("mlflow.log_metric"),
+            patch("mlflow.log_artifact"),
+        ):
             model, run_id, val_metrics = train_model(
-                X_tr, y_tr, X_v, y_v,
+                X_tr,
+                y_tr,
+                X_v,
+                y_v,
                 model_type="random_forest",
                 params={"n_estimators": 10, "random_state": 42, "n_jobs": 1},
             )
@@ -113,15 +120,21 @@ class TestTrainModel:
         mock_active.__enter__ = MagicMock(return_value=mock_run)
         mock_active.__exit__ = MagicMock(return_value=False)
 
-        with patch("mlflow.set_tracking_uri"), \
-             patch("mlflow.set_experiment"), \
-             patch("mlflow.sklearn.autolog"), \
-             patch("mlflow.start_run", return_value=mock_active), \
-             patch("mlflow.log_metric"), \
-             patch("mlflow.log_artifact"):
-
+        with (
+            patch("mlflow.set_tracking_uri"),
+            patch("mlflow.set_experiment"),
+            patch("mlflow.sklearn.autolog"),
+            patch("mlflow.log_params"),
+            patch("mlflow.sklearn.log_model"),
+            patch("mlflow.start_run", return_value=mock_active),
+            patch("mlflow.log_metric"),
+            patch("mlflow.log_artifact"),
+        ):
             model, run_id, val_metrics = train_model(
-                X_tr, y_tr, X_v, y_v,
+                X_tr,
+                y_tr,
+                X_v,
+                y_v,
                 model_type="gradient_boosting",
                 params={"n_estimators": 10, "random_state": 42},
             )
@@ -138,10 +151,11 @@ class TestRegisterModel:
         mock_mv.version = "3"
         mock_client = MagicMock()
 
-        with patch("mlflow.set_tracking_uri"), \
-             patch("mlflow.register_model", return_value=mock_mv), \
-             patch("mlflow.tracking.MlflowClient", return_value=mock_client):
-
+        with (
+            patch("mlflow.set_tracking_uri"),
+            patch("mlflow.register_model", return_value=mock_mv),
+            patch("mlflow.tracking.MlflowClient", return_value=mock_client),
+        ):
             version = register_model(
                 run_id="run-abc",
                 val_metrics={"auc": 0.85},
@@ -158,10 +172,11 @@ class TestRegisterModel:
         mock_mv.version = "4"
         mock_client = MagicMock()
 
-        with patch("mlflow.set_tracking_uri"), \
-             patch("mlflow.register_model", return_value=mock_mv), \
-             patch("mlflow.tracking.MlflowClient", return_value=mock_client):
-
+        with (
+            patch("mlflow.set_tracking_uri"),
+            patch("mlflow.register_model", return_value=mock_mv),
+            patch("mlflow.tracking.MlflowClient", return_value=mock_client),
+        ):
             version = register_model(
                 run_id="run-xyz",
                 val_metrics={"auc": 0.60},
@@ -174,10 +189,11 @@ class TestRegisterModel:
     def test_returns_none_on_registry_failure(self):
         from src.training.train import register_model
 
-        with patch("mlflow.set_tracking_uri"), \
-             patch("mlflow.register_model", side_effect=Exception("registry error")), \
-             patch("mlflow.tracking.MlflowClient"):
-
+        with (
+            patch("mlflow.set_tracking_uri"),
+            patch("mlflow.register_model", side_effect=Exception("registry error")),
+            patch("mlflow.tracking.MlflowClient"),
+        ):
             version = register_model(run_id="run-fail")
 
         assert version is None
@@ -186,6 +202,7 @@ class TestRegisterModel:
 # ──────────────────────────────────────────────────────────────────────────────
 # src/evaluation/metrics.py
 # ──────────────────────────────────────────────────────────────────────────────
+
 
 class TestComputeFullMetrics:
     def test_prefix_applied(self):
@@ -215,15 +232,16 @@ class TestEvaluateModel:
     def test_logs_metrics_to_mlflow(self, small_xy):
         from src.evaluation.metrics import evaluate_model
 
-        X_tr, y_tr, X_v, y_v, X_te, y_te, *_ = (*small_xy, None)
+        X_tr, y_tr, _X_v, _y_v, X_te, y_te, *_ = (*small_xy, None)
         clf = RandomForestClassifier(n_estimators=10, random_state=0)
         clf.fit(X_tr, y_tr)
 
-        with patch("mlflow.log_metrics") as mock_log, \
-             patch("mlflow.log_artifact"), \
-             patch("src.evaluation.metrics.log_confusion_matrix"), \
-             patch("src.evaluation.metrics.log_roc_curve"):
-
+        with (
+            patch("mlflow.log_metrics") as mock_log,
+            patch("mlflow.log_artifact"),
+            patch("src.evaluation.metrics.log_confusion_matrix"),
+            patch("src.evaluation.metrics.log_roc_curve"),
+        ):
             metrics = evaluate_model(clf, X_te, y_te, split_name="test", log_plots=False)
 
         mock_log.assert_called_once()
@@ -249,11 +267,12 @@ class TestLogConfusionMatrix:
 # src/evaluation/promotion.py
 # ──────────────────────────────────────────────────────────────────────────────
 
+
 class TestCompareModels:
     def test_detects_improvement(self, small_xy):
         from src.evaluation.promotion import compare_models
 
-        X_tr, y_tr, X_v, y_v, X_te, y_te, *_ = (*small_xy, None)
+        X_tr, y_tr, _X_v, _y_v, X_te, y_te, *_ = (*small_xy, None)
 
         # Train a weaker champion
         champion = RandomForestClassifier(n_estimators=5, max_depth=2, random_state=1)
@@ -274,7 +293,7 @@ class TestCompareModels:
     def test_no_promotion_if_worse(self, small_xy):
         from src.evaluation.promotion import compare_models
 
-        X_tr, y_tr, X_v, y_v, X_te, y_te, *_ = (*small_xy, None)
+        X_tr, y_tr, _X_v, _y_v, X_te, y_te, *_ = (*small_xy, None)
 
         # Same model for both → delta = 0, should not promote
         clf = RandomForestClassifier(n_estimators=20, random_state=42)
@@ -292,9 +311,10 @@ class TestLoadProductionModel:
         mock_client = MagicMock()
         mock_client.get_latest_versions.return_value = []
 
-        with patch("mlflow.set_tracking_uri"), \
-             patch("src.evaluation.promotion.MlflowClient", return_value=mock_client):
-
+        with (
+            patch("mlflow.set_tracking_uri"),
+            patch("src.evaluation.promotion.MlflowClient", return_value=mock_client),
+        ):
             result = load_production_model("ChurnModel")
 
         assert result is None
@@ -310,10 +330,11 @@ class TestLoadProductionModel:
         mock_client = MagicMock()
         mock_client.get_latest_versions.return_value = [mock_mv]
 
-        with patch("mlflow.set_tracking_uri"), \
-             patch("src.evaluation.promotion.MlflowClient", return_value=mock_client), \
-             patch("mlflow.sklearn.load_model", return_value=mock_model):
-
+        with (
+            patch("mlflow.set_tracking_uri"),
+            patch("src.evaluation.promotion.MlflowClient", return_value=mock_client),
+            patch("mlflow.sklearn.load_model", return_value=mock_model),
+        ):
             result = load_production_model("ChurnModel")
 
         assert result is mock_model
@@ -322,6 +343,7 @@ class TestLoadProductionModel:
 # ──────────────────────────────────────────────────────────────────────────────
 # src/monitoring/alerting.py
 # ──────────────────────────────────────────────────────────────────────────────
+
 
 class TestTriggerRetrainingDag:
     def test_returns_true_on_success(self):
@@ -336,9 +358,10 @@ class TestTriggerRetrainingDag:
         assert result is True
 
     def test_returns_false_on_failure(self):
+        import requests as req_module
+
         from src.monitoring.alerting import trigger_retraining_dag
 
-        import requests as req_module
         with patch("requests.post", side_effect=req_module.exceptions.ConnectionError("refused")):
             result = trigger_retraining_dag("drift_detected")
 
@@ -366,6 +389,7 @@ class TestSendSlackNotification:
 # src/serving/model_loader.py
 # ──────────────────────────────────────────────────────────────────────────────
 
+
 class TestLoadModelFromRegistry:
     def test_raises_when_no_stage_version(self):
         from src.serving.model_loader import load_model_from_registry
@@ -373,14 +397,15 @@ class TestLoadModelFromRegistry:
         mock_client = MagicMock()
         mock_client.get_latest_versions.return_value = []
 
-        with patch("mlflow.set_tracking_uri"), \
-             patch("mlflow.tracking.MlflowClient", return_value=mock_client):
-
+        with (
+            patch("mlflow.set_tracking_uri"),
+            patch("mlflow.tracking.MlflowClient", return_value=mock_client),
+        ):
             with pytest.raises(RuntimeError, match="No 'Production' version found"):
                 load_model_from_registry("ChurnModel", "Production")
 
     def test_loads_correctly(self):
-        from src.serving.model_loader import load_model_from_registry, LoadedModel
+        from src.serving.model_loader import LoadedModel, load_model_from_registry
 
         mock_mv = MagicMock()
         mock_mv.version = "5"
@@ -389,10 +414,11 @@ class TestLoadModelFromRegistry:
         mock_client = MagicMock()
         mock_client.get_latest_versions.return_value = [mock_mv]
 
-        with patch("mlflow.set_tracking_uri"), \
-             patch("mlflow.tracking.MlflowClient", return_value=mock_client), \
-             patch("mlflow.sklearn.load_model", return_value=mock_model):
-
+        with (
+            patch("mlflow.set_tracking_uri"),
+            patch("mlflow.tracking.MlflowClient", return_value=mock_client),
+            patch("mlflow.sklearn.load_model", return_value=mock_model),
+        ):
             loaded = load_model_from_registry("ChurnModel", "Production")
 
         assert isinstance(loaded, LoadedModel)
@@ -405,20 +431,31 @@ class TestLoadModelFromRegistry:
 # src/training/hyperparameter.py
 # ──────────────────────────────────────────────────────────────────────────────
 
+
 class TestOptimizeHyperparameters:
     def test_returns_best_params(self, small_xy):
         from src.training.hyperparameter import optimize_hyperparameters
 
         X_tr, y_tr, X_v, y_v, *_ = small_xy
 
-        with patch("mlflow.set_tracking_uri"), \
-             patch("mlflow.set_experiment"), \
-             patch("mlflow.start_run", return_value=MagicMock(__enter__=MagicMock(return_value=MagicMock()), __exit__=MagicMock(return_value=False))), \
-             patch("mlflow.log_params"), \
-             patch("mlflow.log_metric"):
-
+        with (
+            patch("mlflow.set_tracking_uri"),
+            patch("mlflow.set_experiment"),
+            patch(
+                "mlflow.start_run",
+                return_value=MagicMock(
+                    __enter__=MagicMock(return_value=MagicMock()),
+                    __exit__=MagicMock(return_value=False),
+                ),
+            ),
+            patch("mlflow.log_params"),
+            patch("mlflow.log_metric"),
+        ):
             best = optimize_hyperparameters(
-                X_tr, y_tr, X_v, y_v,
+                X_tr,
+                y_tr,
+                X_v,
+                y_v,
                 model_type="random_forest",
                 n_trials=3,
                 timeout=30,

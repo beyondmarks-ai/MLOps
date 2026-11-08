@@ -1,0 +1,14 @@
+.git
+.venv
+.azure-local
+.env
+data
+logs
+monitoring
+*.pdf
+mlruns
+*.db
+__pycache__
+.pytest_cache
+output
+tmp

@@ -1,19 +1,20 @@
 """Targeted tests to cover remaining uncovered lines."""
 
+from pathlib import Path
+from unittest.mock import MagicMock, patch
+
 import numpy as np
 import pandas as pd
 import pytest
-from pathlib import Path
-from unittest.mock import patch, MagicMock
-
 
 # ──────────────────────────────────────────────────────────────────────────────
 # src/data/ingestion.py – save_raw_data, load_or_generate, load_latest, ingest
 # ──────────────────────────────────────────────────────────────────────────────
 
+
 class TestIngestionIO:
     def test_save_raw_data_creates_file(self, tmp_path):
-        from src.data.ingestion import save_raw_data, generate_synthetic_churn_data
+        from src.data.ingestion import generate_synthetic_churn_data, save_raw_data
 
         df = generate_synthetic_churn_data(n_samples=50)
         path = save_raw_data(df, base_dir=str(tmp_path), partition_date="2024-03-01")
@@ -22,15 +23,16 @@ class TestIngestionIO:
         assert len(loaded) == 50
 
     def test_save_raw_data_defaults_to_today(self, tmp_path):
-        from src.data.ingestion import save_raw_data, generate_synthetic_churn_data
         from datetime import date
+
+        from src.data.ingestion import generate_synthetic_churn_data, save_raw_data
 
         df = generate_synthetic_churn_data(n_samples=20)
         path = save_raw_data(df, base_dir=str(tmp_path))
         assert date.today().isoformat() in path
 
     def test_load_or_generate_uses_file_if_exists(self, tmp_path):
-        from src.data.ingestion import load_or_generate_data, generate_synthetic_churn_data
+        from src.data.ingestion import generate_synthetic_churn_data, load_or_generate_data
 
         df = generate_synthetic_churn_data(n_samples=30)
         csv_path = str(tmp_path / "data.csv")
@@ -55,7 +57,11 @@ class TestIngestionIO:
         assert len(result) == 80
 
     def test_load_latest_raw_data(self, tmp_path):
-        from src.data.ingestion import save_raw_data, load_latest_raw_data, generate_synthetic_churn_data
+        from src.data.ingestion import (
+            generate_synthetic_churn_data,
+            load_latest_raw_data,
+            save_raw_data,
+        )
 
         df = generate_synthetic_churn_data(n_samples=40)
         save_raw_data(df, base_dir=str(tmp_path), partition_date="2024-06-01")
@@ -70,7 +76,11 @@ class TestIngestionIO:
             load_latest_raw_data(base_dir=str(tmp_path))
 
     def test_load_latest_picks_most_recent(self, tmp_path):
-        from src.data.ingestion import save_raw_data, load_latest_raw_data, generate_synthetic_churn_data
+        from src.data.ingestion import (
+            generate_synthetic_churn_data,
+            load_latest_raw_data,
+            save_raw_data,
+        )
 
         df_old = generate_synthetic_churn_data(n_samples=30, random_state=1)
         df_new = generate_synthetic_churn_data(n_samples=50, random_state=2)
@@ -98,6 +108,7 @@ class TestIngestionIO:
 # src/evaluation/promotion.py – promote_model, run_promotion_logic
 # ──────────────────────────────────────────────────────────────────────────────
 
+
 class TestPromoteModel:
     def test_promotes_and_archives(self):
         from src.evaluation.promotion import promote_model
@@ -107,12 +118,15 @@ class TestPromoteModel:
         mock_client = MagicMock()
         mock_client.get_latest_versions.return_value = [mock_mv_current]
 
-        with patch("mlflow.set_tracking_uri"), \
-             patch("src.evaluation.promotion.MlflowClient", return_value=mock_client):
+        with (
+            patch("mlflow.set_tracking_uri"),
+            patch("src.evaluation.promotion.MlflowClient", return_value=mock_client),
+        ):
             promote_model(challenger_version="3")
 
-        # Should have been called twice: archive old + promote new
-        assert mock_client.transition_model_version_stage.call_count == 2
+        mock_client.transition_model_version_stage.assert_called_once_with(
+            name="ChurnModel", version="3", stage="Production", archive_existing_versions=True
+        )
 
     def test_promotes_when_no_existing_production(self):
         from src.evaluation.promotion import promote_model
@@ -120,8 +134,10 @@ class TestPromoteModel:
         mock_client = MagicMock()
         mock_client.get_latest_versions.return_value = []
 
-        with patch("mlflow.set_tracking_uri"), \
-             patch("src.evaluation.promotion.MlflowClient", return_value=mock_client):
+        with (
+            patch("mlflow.set_tracking_uri"),
+            patch("src.evaluation.promotion.MlflowClient", return_value=mock_client),
+        ):
             promote_model(challenger_version="1")
 
         # No archive, only promotion
@@ -139,8 +155,9 @@ class TestRunPromotionLogic:
         return X_te, y_te
 
     def test_auto_promotes_when_no_champion(self, tmp_path):
-        from src.evaluation.promotion import run_promotion_logic
         from sklearn.ensemble import RandomForestClassifier
+
+        from src.evaluation.promotion import run_promotion_logic
 
         X_te, y_te = self._make_xy(tmp_path)
 
@@ -151,12 +168,13 @@ class TestRunPromotionLogic:
         mock_client = MagicMock()
         mock_client.get_latest_versions.return_value = []  # no champion
 
-        with patch("mlflow.set_tracking_uri"), \
-             patch("src.evaluation.promotion.MlflowClient", return_value=mock_client), \
-             patch("src.evaluation.promotion.load_production_model", return_value=None), \
-             patch("mlflow.sklearn.load_model", return_value=clf), \
-             patch("src.evaluation.promotion.promote_model") as mock_promote:
-
+        with (
+            patch("mlflow.set_tracking_uri"),
+            patch("src.evaluation.promotion.MlflowClient", return_value=mock_client),
+            patch("src.evaluation.promotion.load_production_model", return_value=None),
+            patch("mlflow.sklearn.load_model", return_value=clf),
+            patch("src.evaluation.promotion.promote_model") as mock_promote,
+        ):
             result = run_promotion_logic(
                 challenger_run_id="run-new",
                 challenger_version="1",
@@ -168,8 +186,9 @@ class TestRunPromotionLogic:
         mock_promote.assert_called_once_with("1", "ChurnModel")
 
     def test_rejects_weaker_challenger(self, tmp_path):
-        from src.evaluation.promotion import run_promotion_logic
         from sklearn.ensemble import RandomForestClassifier
+
+        from src.evaluation.promotion import run_promotion_logic
 
         X_te, y_te = self._make_xy(tmp_path)
         clf = RandomForestClassifier(n_estimators=10, random_state=0)
@@ -178,13 +197,14 @@ class TestRunPromotionLogic:
         mock_client = MagicMock()
         mock_client.get_latest_versions.return_value = []
 
-        with patch("mlflow.set_tracking_uri"), \
-             patch("src.evaluation.promotion.MlflowClient", return_value=mock_client), \
-             patch("src.evaluation.promotion.load_production_model", return_value=clf), \
-             patch("mlflow.sklearn.load_model", return_value=clf), \
-             patch("mlflow.start_run") as mock_run, \
-             patch("src.evaluation.promotion.PROMOTION_AUC_DELTA", 1.0):  # impossible threshold
-
+        with (
+            patch("mlflow.set_tracking_uri"),
+            patch("src.evaluation.promotion.MlflowClient", return_value=mock_client),
+            patch("src.evaluation.promotion.load_production_model", return_value=clf),
+            patch("mlflow.sklearn.load_model", return_value=clf),
+            patch("mlflow.start_run") as mock_run,
+            patch("src.evaluation.promotion.PROMOTION_AUC_DELTA", 1.0),
+        ):  # impossible threshold
             mock_run.return_value.__enter__ = MagicMock(return_value=MagicMock())
             mock_run.return_value.__exit__ = MagicMock(return_value=False)
 
@@ -202,13 +222,15 @@ class TestRunPromotionLogic:
 # src/monitoring/alerting.py – alert_on_drift
 # ──────────────────────────────────────────────────────────────────────────────
 
+
 class TestAlertOnDrift:
     def test_alert_triggers_retrain(self):
         from src.monitoring.alerting import alert_on_drift
 
-        with patch("src.monitoring.alerting.send_slack_notification") as mock_slack, \
-             patch("src.monitoring.alerting.trigger_retraining_dag") as mock_trigger:
-
+        with (
+            patch("src.monitoring.alerting.send_slack_notification") as mock_slack,
+            patch("src.monitoring.alerting.trigger_retraining_dag") as mock_trigger,
+        ):
             mock_trigger.return_value = True
             alert_on_drift(report_dir="/tmp/reports", drift_score=0.45, auto_retrain=True)
 
@@ -218,9 +240,10 @@ class TestAlertOnDrift:
     def test_alert_no_auto_retrain(self):
         from src.monitoring.alerting import alert_on_drift
 
-        with patch("src.monitoring.alerting.send_slack_notification") as mock_slack, \
-             patch("src.monitoring.alerting.trigger_retraining_dag") as mock_trigger:
-
+        with (
+            patch("src.monitoring.alerting.send_slack_notification") as mock_slack,
+            patch("src.monitoring.alerting.trigger_retraining_dag") as mock_trigger,
+        ):
             alert_on_drift(report_dir="/tmp/reports", auto_retrain=False)
 
         mock_slack.assert_called_once()
@@ -229,9 +252,10 @@ class TestAlertOnDrift:
     def test_alert_logs_error_when_trigger_fails(self):
         from src.monitoring.alerting import alert_on_drift
 
-        with patch("src.monitoring.alerting.send_slack_notification"), \
-             patch("src.monitoring.alerting.trigger_retraining_dag", return_value=False):
-
+        with (
+            patch("src.monitoring.alerting.send_slack_notification"),
+            patch("src.monitoring.alerting.trigger_retraining_dag", return_value=False),
+        ):
             # Should not raise even when trigger fails
             alert_on_drift(report_dir="/tmp/reports", auto_retrain=True)
 
@@ -239,6 +263,7 @@ class TestAlertOnDrift:
 # ──────────────────────────────────────────────────────────────────────────────
 # src/monitoring/drift_detector.py – load_reference_data
 # ──────────────────────────────────────────────────────────────────────────────
+
 
 class TestLoadReferenceData:
     def test_loads_existing_file(self, tmp_path):
@@ -262,6 +287,7 @@ class TestLoadReferenceData:
 # ──────────────────────────────────────────────────────────────────────────────
 # src/evaluation/metrics.py – log_roc_curve
 # ──────────────────────────────────────────────────────────────────────────────
+
 
 class TestLogRocCurve:
     def test_does_not_crash(self):

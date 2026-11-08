@@ -2,11 +2,15 @@
 
 import logging
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any
 
+import numpy as np
 import pandas as pd
 
-from src.data.ingestion import CATEGORICAL_FEATURES, FEATURE_SCHEMA, NUMERICAL_FEATURES, TARGET_COLUMN
+from src.data.ingestion import (
+    FEATURE_SCHEMA,
+    TARGET_COLUMN,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -16,9 +20,9 @@ class ValidationResult:
     """Container for schema validation outcome."""
 
     passed: bool
-    errors: List[str] = field(default_factory=list)
-    warnings: List[str] = field(default_factory=list)
-    stats: Dict[str, Any] = field(default_factory=dict)
+    errors: list[str] = field(default_factory=list)
+    warnings: list[str] = field(default_factory=list)
+    stats: dict[str, Any] = field(default_factory=dict)
 
     def add_error(self, msg: str) -> None:
         """Append an error and mark validation as failed."""
@@ -43,7 +47,7 @@ class ValidationResult:
 
 
 # Expected value ranges for numerical features
-FEATURE_RANGES: Dict[str, Dict[str, Optional[float]]] = {
+FEATURE_RANGES: dict[str, dict[str, float | None]] = {
     "age": {"min": 0, "max": 120},
     "tenure_months": {"min": 0, "max": 600},
     "monthly_charges": {"min": 0, "max": 10000},
@@ -59,7 +63,7 @@ FEATURE_RANGES: Dict[str, Dict[str, Optional[float]]] = {
 }
 
 # Expected categories for categorical features
-EXPECTED_CATEGORIES: Dict[str, List[str]] = {
+EXPECTED_CATEGORIES: dict[str, list[str]] = {
     "contract_type": ["Month-to-month", "One year", "Two year"],
     "payment_method": [
         "Electronic check",
@@ -117,6 +121,13 @@ def validate_schema(df: pd.DataFrame, require_target: bool = True) -> Validation
         if col not in df.columns:
             continue
         series = df[col].dropna()
+        if not pd.api.types.is_numeric_dtype(series):
+            result.add_error(f"Column '{col}' must be numeric")
+            continue
+        if not np.isfinite(series).all():
+            result.add_error(f"Column '{col}' contains non-finite values")
+        if FEATURE_SCHEMA[col] == "int64" and (series % 1 != 0).any():
+            result.add_error(f"Column '{col}' must contain whole numbers")
         if bounds["min"] is not None and (series < bounds["min"]).any():
             n_violations = (series < bounds["min"]).sum()
             result.add_error(f"Column '{col}': {n_violations} values below min={bounds['min']}")
@@ -141,6 +152,9 @@ def validate_schema(df: pd.DataFrame, require_target: bool = True) -> Validation
 
     # --- Target distribution ---
     if require_target and TARGET_COLUMN in df.columns:
+        if df[TARGET_COLUMN].isna().any() or not df[TARGET_COLUMN].isin([0, 1]).all():
+            result.add_error("Target must contain only non-null 0 or 1 labels")
+            return result
         churn_rate = df[TARGET_COLUMN].mean()
         result.stats["churn_rate"] = churn_rate
         if churn_rate < 0.01 or churn_rate > 0.99:
@@ -150,7 +164,7 @@ def validate_schema(df: pd.DataFrame, require_target: bool = True) -> Validation
     return result
 
 
-def validate_inference_payload(data: Dict[str, Any]) -> ValidationResult:
+def validate_inference_payload(data: dict[str, Any]) -> ValidationResult:
     """Validate a single inference request payload.
 
     Args:

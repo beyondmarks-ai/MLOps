@@ -1,0 +1,16 @@
+{$APP_HOST} {
+    request_body {
+        max_size 11MB
+    }
+    header {
+        X-Content-Type-Options nosniff
+        X-Frame-Options DENY
+        Referrer-Policy no-referrer
+        Strict-Transport-Security "max-age=31536000"
+    }
+    reverse_proxy api:8000 api2:8000 {
+        lb_policy round_robin
+        health_uri /live
+        health_interval 15s
+    }
+}

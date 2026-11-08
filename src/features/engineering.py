@@ -2,13 +2,14 @@
 
 import logging
 import pickle
+import tempfile
 from pathlib import Path
-from typing import List, Optional, Tuple
 
 import mlflow
 import numpy as np
 import pandas as pd
 from sklearn.compose import ColumnTransformer
+from sklearn.impute import SimpleImputer
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
 
@@ -20,8 +21,8 @@ TRANSFORMER_ARTIFACT_NAME = "preprocessor.pkl"
 
 
 def build_preprocessor(
-    numerical_features: Optional[List[str]] = None,
-    categorical_features: Optional[List[str]] = None,
+    numerical_features: list[str] | None = None,
+    categorical_features: list[str] | None = None,
 ) -> ColumnTransformer:
     """Build sklearn ColumnTransformer for feature preprocessing.
 
@@ -39,12 +40,14 @@ def build_preprocessor(
 
     numeric_pipeline = Pipeline(
         steps=[
+            ("imputer", SimpleImputer(strategy="median", keep_empty_features=True)),
             ("scaler", StandardScaler()),
         ]
     )
 
     categorical_pipeline = Pipeline(
         steps=[
+            ("imputer", SimpleImputer(strategy="most_frequent", keep_empty_features=True)),
             ("encoder", OneHotEncoder(handle_unknown="ignore", sparse_output=False)),
         ]
     )
@@ -67,8 +70,8 @@ def build_preprocessor(
 
 def fit_preprocessor(
     df: pd.DataFrame,
-    numerical_features: Optional[List[str]] = None,
-    categorical_features: Optional[List[str]] = None,
+    numerical_features: list[str] | None = None,
+    categorical_features: list[str] | None = None,
 ) -> ColumnTransformer:
     """Fit the preprocessor on training data.
 
@@ -82,7 +85,9 @@ def fit_preprocessor(
     """
     preprocessor = build_preprocessor(numerical_features, categorical_features)
 
-    feature_cols = (numerical_features or NUMERICAL_FEATURES) + (categorical_features or CATEGORICAL_FEATURES)
+    feature_cols = (numerical_features or NUMERICAL_FEATURES) + (
+        categorical_features or CATEGORICAL_FEATURES
+    )
     X = df[feature_cols]
 
     preprocessor.fit(X)
@@ -93,9 +98,9 @@ def fit_preprocessor(
 def transform_features(
     df: pd.DataFrame,
     preprocessor: ColumnTransformer,
-    numerical_features: Optional[List[str]] = None,
-    categorical_features: Optional[List[str]] = None,
-) -> Tuple[np.ndarray, Optional[np.ndarray]]:
+    numerical_features: list[str] | None = None,
+    categorical_features: list[str] | None = None,
+) -> tuple[np.ndarray, np.ndarray | None]:
     """Apply fitted preprocessor to a DataFrame.
 
     Args:
@@ -126,7 +131,7 @@ def transform_features(
     return X_transformed, y
 
 
-def get_feature_names(preprocessor: ColumnTransformer) -> List[str]:
+def get_feature_names(preprocessor: ColumnTransformer) -> list[str]:
     """Extract feature names after transformation.
 
     Args:
@@ -135,7 +140,7 @@ def get_feature_names(preprocessor: ColumnTransformer) -> List[str]:
     Returns:
         List of feature name strings.
     """
-    feature_names: List[str] = []
+    feature_names: list[str] = []
     for name, transformer, cols in preprocessor.transformers_:
         if name == "numerical":
             feature_names.extend(cols)
@@ -176,7 +181,7 @@ def load_preprocessor(path: str) -> ColumnTransformer:
 
 
 def log_feature_importance(
-    feature_names: List[str],
+    feature_names: list[str],
     importances: np.ndarray,
     top_n: int = 20,
 ) -> None:
@@ -187,9 +192,9 @@ def log_feature_importance(
         importances: Array of importance scores.
         top_n: Number of top features to log as individual metrics.
     """
-    importance_df = pd.DataFrame(
-        {"feature": feature_names, "importance": importances}
-    ).sort_values("importance", ascending=False)
+    importance_df = pd.DataFrame({"feature": feature_names, "importance": importances}).sort_values(
+        "importance", ascending=False
+    )
 
     # Log top-N as individual metrics
     for _, row in importance_df.head(top_n).iterrows():
@@ -197,9 +202,10 @@ def log_feature_importance(
         mlflow.log_metric(f"feat_importance_{safe_name}", round(float(row["importance"]), 6))
 
     # Save full importance table as CSV artifact
-    tmp_path = "/tmp/feature_importances.csv"
-    importance_df.to_csv(tmp_path, index=False)
-    mlflow.log_artifact(tmp_path, artifact_path="feature_analysis")
+    with tempfile.TemporaryDirectory() as directory:
+        tmp_path = str(Path(directory) / "feature_importances.csv")
+        importance_df.to_csv(tmp_path, index=False)
+        mlflow.log_artifact(tmp_path, artifact_path="feature_analysis")
     logger.info("Logged feature importances for %d features", len(feature_names))
 
 
@@ -208,7 +214,9 @@ def run_feature_engineering(
     val_df: pd.DataFrame,
     test_df: pd.DataFrame,
     output_dir: str = "data/processed",
-) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, ColumnTransformer]:
+) -> tuple[
+    np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, ColumnTransformer
+]:
     """End-to-end feature engineering: fit on train, transform all splits.
 
     Args:

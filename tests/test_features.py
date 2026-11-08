@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from src.data.ingestion import generate_synthetic_churn_data, split_dataset, TARGET_COLUMN
+from src.data.ingestion import TARGET_COLUMN, generate_synthetic_churn_data, split_dataset
 from src.data.validation import validate_schema
 from src.features.engineering import (
     build_preprocessor,
@@ -113,9 +113,7 @@ class TestFeatureEngineering:
 
     def test_run_feature_engineering(self, split_dfs, tmp_path):
         train_df, val_df, test_df = split_dfs
-        result = run_feature_engineering(
-            train_df, val_df, test_df, output_dir=str(tmp_path)
-        )
+        result = run_feature_engineering(train_df, val_df, test_df, output_dir=str(tmp_path))
         X_train, y_train, X_val, y_val, X_test, y_test, preprocessor = result
         assert X_train.shape[0] == len(train_df)
         assert X_val.shape[0] == len(val_df)

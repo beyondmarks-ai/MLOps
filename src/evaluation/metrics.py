@@ -1,12 +1,11 @@
 """Evaluation metrics with MLflow artifact logging."""
 
 import logging
-import os
-from typing import Dict, Optional
+import tempfile
+from pathlib import Path
 
 import mlflow
 import numpy as np
-import pandas as pd
 from sklearn.metrics import (
     ConfusionMatrixDisplay,
     RocCurveDisplay,
@@ -26,7 +25,7 @@ def compute_full_metrics(
     y_pred: np.ndarray,
     y_prob: np.ndarray,
     prefix: str = "",
-) -> Dict[str, float]:
+) -> dict[str, float]:
     """Compute a comprehensive set of binary classification metrics.
 
     Args:
@@ -54,7 +53,7 @@ def log_confusion_matrix(
     y_true: np.ndarray,
     y_pred: np.ndarray,
     artifact_path: str = "evaluation",
-    labels: Optional[list] = None,
+    labels: list | None = None,
 ) -> None:
     """Save and log a confusion matrix plot as MLflow artifact.
 
@@ -66,6 +65,7 @@ def log_confusion_matrix(
     """
     try:
         import matplotlib
+
         matplotlib.use("Agg")
         import matplotlib.pyplot as plt
 
@@ -75,10 +75,11 @@ def log_confusion_matrix(
         disp.plot(ax=ax, cmap="Blues", colorbar=False)
         ax.set_title("Confusion Matrix")
 
-        tmp_path = "/tmp/confusion_matrix.png"
-        fig.savefig(tmp_path, bbox_inches="tight", dpi=120)
-        plt.close(fig)
-        mlflow.log_artifact(tmp_path, artifact_path=artifact_path)
+        with tempfile.TemporaryDirectory() as directory:
+            tmp_path = str(Path(directory) / "confusion_matrix.png")
+            fig.savefig(tmp_path, bbox_inches="tight", dpi=120)
+            plt.close(fig)
+            mlflow.log_artifact(tmp_path, artifact_path=artifact_path)
         logger.info("Confusion matrix logged to MLflow")
     except ImportError:
         logger.warning("matplotlib not available; skipping confusion matrix plot")
@@ -98,6 +99,7 @@ def log_roc_curve(
     """
     try:
         import matplotlib
+
         matplotlib.use("Agg")
         import matplotlib.pyplot as plt
 
@@ -105,10 +107,11 @@ def log_roc_curve(
         RocCurveDisplay.from_predictions(y_true, y_prob, ax=ax)
         ax.set_title("ROC Curve")
 
-        tmp_path = "/tmp/roc_curve.png"
-        fig.savefig(tmp_path, bbox_inches="tight", dpi=120)
-        plt.close(fig)
-        mlflow.log_artifact(tmp_path, artifact_path=artifact_path)
+        with tempfile.TemporaryDirectory() as directory:
+            tmp_path = str(Path(directory) / "roc_curve.png")
+            fig.savefig(tmp_path, bbox_inches="tight", dpi=120)
+            plt.close(fig)
+            mlflow.log_artifact(tmp_path, artifact_path=artifact_path)
         logger.info("ROC curve logged to MLflow")
     except ImportError:
         logger.warning("matplotlib not available; skipping ROC curve plot")
@@ -120,7 +123,7 @@ def evaluate_model(
     y: np.ndarray,
     split_name: str = "test",
     log_plots: bool = True,
-) -> Dict[str, float]:
+) -> dict[str, float]:
     """Evaluate a fitted model and log all metrics + plots to the active MLflow run.
 
     Args:

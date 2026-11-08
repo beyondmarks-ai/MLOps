@@ -2,9 +2,8 @@
 
 import logging
 import os
-from datetime import date, datetime, timedelta
+from datetime import date, timedelta
 from pathlib import Path
-from typing import Optional, Tuple
 
 import pandas as pd
 
@@ -16,10 +15,21 @@ DRIFT_THRESHOLD = float(os.getenv("DRIFT_THRESHOLD", "0.3"))
 REFERENCE_DATA_PATH = os.getenv("REFERENCE_DATA_PATH", "data/processed/reference.csv")
 
 FEATURE_COLUMNS = [
-    "age", "tenure_months", "monthly_charges", "total_charges", "num_products",
-    "has_tech_support", "has_online_security", "has_backup", "has_device_protection",
-    "is_senior_citizen", "has_partner", "has_dependents",
-    "contract_type", "payment_method", "internet_service",
+    "age",
+    "tenure_months",
+    "monthly_charges",
+    "total_charges",
+    "num_products",
+    "has_tech_support",
+    "has_online_security",
+    "has_backup",
+    "has_device_protection",
+    "is_senior_citizen",
+    "has_partner",
+    "has_dependents",
+    "contract_type",
+    "payment_method",
+    "internet_service",
 ]
 
 
@@ -81,9 +91,9 @@ def load_production_data(
 def generate_drift_reports(
     reference_df: pd.DataFrame,
     current_df: pd.DataFrame,
-    report_date: Optional[str] = None,
+    report_date: str | None = None,
     reports_dir: str = REPORTS_DIR,
-) -> Tuple[str, bool]:
+) -> tuple[str, bool]:
     """Generate Evidently drift reports and save as HTML.
 
     Args:
@@ -104,12 +114,14 @@ def generate_drift_reports(
     drift_detected = False
 
     try:
-        from evidently.report import Report
         from evidently.metric_preset import DataDriftPreset, DataQualityPreset
         from evidently.metrics import ColumnDriftMetric
+        from evidently.report import Report
 
         # Ensure common columns
-        common_cols = [c for c in FEATURE_COLUMNS if c in reference_df.columns and c in current_df.columns]
+        common_cols = [
+            c for c in FEATURE_COLUMNS if c in reference_df.columns and c in current_df.columns
+        ]
         ref_subset = reference_df[common_cols].copy()
         cur_subset = current_df[common_cols].copy()
 
@@ -132,7 +144,6 @@ def generate_drift_reports(
                     drift_share,
                     DRIFT_THRESHOLD,
                 )
-            break
 
         # Data Quality Report
         quality_report = Report(metrics=[DataQualityPreset()])
@@ -141,7 +152,9 @@ def generate_drift_reports(
 
         # Target Drift Report (if prediction column exists)
         if "prediction" in current_df.columns and "churn" in reference_df.columns:
-            ref_with_target = reference_df[common_cols + ["churn"]].rename(columns={"churn": "prediction"})
+            ref_with_target = reference_df[common_cols + ["churn"]].rename(
+                columns={"churn": "prediction"}
+            )
             cur_with_target = current_df[common_cols + ["prediction"]]
 
             target_drift_report = Report(metrics=[ColumnDriftMetric(column_name="prediction")])
@@ -155,16 +168,18 @@ def generate_drift_reports(
         # Write a simple placeholder
         placeholder = output_dir / "drift_not_available.txt"
         placeholder.write_text("Evidently not installed. Install with: pip install evidently")
+        raise
     except Exception as exc:
         logger.error("Error generating drift reports: %s", exc, exc_info=True)
+        raise
 
     return str(output_dir), drift_detected
 
 
 def run_drift_detection(
     lookback_hours: int = 24,
-    report_date: Optional[str] = None,
-) -> Tuple[bool, str]:
+    report_date: str | None = None,
+) -> tuple[bool, str]:
     """Full drift detection pipeline: load data → generate reports → return result.
 
     Args:
@@ -200,9 +215,7 @@ def run_drift_detection(
 
 
 if __name__ == "__main__":
+    from src.monitoring.service import check_monitoring
+
     logging.basicConfig(level=logging.INFO)
-    detected, report_path = run_drift_detection()
-    if detected:
-        logger.warning("Drift detected! Reports at: %s", report_path)
-    else:
-        logger.info("No significant drift detected. Reports at: %s", report_path)
+    print(check_monitoring())

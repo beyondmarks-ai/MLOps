@@ -1,8 +1,6 @@
 """Pydantic schemas for FastAPI request and response models."""
 
-from typing import Optional
-
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field
 
 
 class PredictRequest(BaseModel):
@@ -27,30 +25,35 @@ class PredictRequest(BaseModel):
     )
     internet_service: str = Field(..., description="DSL | Fiber optic | No")
 
-    model_config = {"json_schema_extra": {
-        "example": {
-            "age": 35,
-            "tenure_months": 24,
-            "monthly_charges": 65.5,
-            "total_charges": 1572.0,
-            "num_products": 2,
-            "has_tech_support": 1,
-            "has_online_security": 0,
-            "has_backup": 1,
-            "has_device_protection": 0,
-            "is_senior_citizen": 0,
-            "has_partner": 1,
-            "has_dependents": 0,
-            "contract_type": "Month-to-month",
-            "payment_method": "Electronic check",
-            "internet_service": "Fiber optic",
-        }
-    }}
+    model_config = {
+        "allow_inf_nan": False,
+        "extra": "forbid",
+        "json_schema_extra": {
+            "example": {
+                "age": 35,
+                "tenure_months": 24,
+                "monthly_charges": 65.5,
+                "total_charges": 1572.0,
+                "num_products": 2,
+                "has_tech_support": 1,
+                "has_online_security": 0,
+                "has_backup": 1,
+                "has_device_protection": 0,
+                "is_senior_citizen": 0,
+                "has_partner": 1,
+                "has_dependents": 0,
+                "contract_type": "Month-to-month",
+                "payment_method": "Electronic check",
+                "internet_service": "Fiber optic",
+            }
+        },
+    }
 
 
 class PredictResponse(BaseModel):
     """Output schema for /predict endpoint."""
 
+    prediction_id: str = Field(..., description="ID for submitting the actual outcome")
     prediction: int = Field(..., description="Binary churn prediction (0=No, 1=Yes)")
     probability: float = Field(..., description="Probability of churn")
     model_name: str = Field(..., description="Model registry name")

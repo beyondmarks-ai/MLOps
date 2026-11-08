@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Churn Lab · Model operations</title>
+  <style>
+    :root{color-scheme:light;--bg:#f3f6f8;--ink:#152b3b;--muted:#4b6070;--line:#d1dce3;--accent:#125c53;--white:#fff}
+    *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.55 system-ui,sans-serif}
+    header{background:var(--ink);color:white;padding:32px max(24px,calc((100vw - 1150px)/2))}header p{color:#c6d9e6;margin-bottom:0}
+    h1{font-size:36px;letter-spacing:-1px;margin:8px 0}h2{font-size:21px;margin:0 0 16px}h3{font-size:16px}
+    main{max-width:1200px;padding:24px;margin:auto}.grid{display:grid;grid-template-columns:1fr 1fr;gap:24px}
+    section{background:var(--white);border:1px solid var(--line);border-radius:12px;padding:24px;margin-bottom:24px}
+    label{display:block;font-size:14px;font-weight:600;margin:12px 0 5px}input,select,button{font:inherit;min-height:44px;border-radius:6px}
+    input,select{width:100%;padding:9px 12px;border:1px solid #8195a3;background:white;color:var(--ink)}button{border:0;padding:10px 18px;background:var(--accent);color:white;cursor:pointer;margin:12px 8px 0 0}
+    button:hover{background:#0c473f}button:disabled{opacity:.6;cursor:wait}:focus-visible{outline:3px solid #cb7217;outline-offset:3px}
+    .fields{display:grid;grid-template-columns:1fr 1fr;gap:0 16px}.hint{font-size:14px;color:var(--muted)}.eyebrow{font-size:13px;letter-spacing:2px;text-transform:uppercase}
+    pre{white-space:pre-wrap;overflow-wrap:anywhere;background:var(--bg);padding:16px;border-radius:6px;font:14px/1.5 ui-monospace,monospace}
+    .notice{padding:12px 16px;border-left:4px solid var(--accent);background:#eaf4f1;margin:12px 0}.error{border-color:#aa2727;background:#fff0ef;color:#831b1b}
+    .table-wrap{overflow:auto}table{width:100%;border-collapse:collapse;font-size:14px}th,td{text-align:left;padding:10px;border-bottom:1px solid var(--line)}caption{text-align:left;font-weight:600;margin:12px 0}
+    @media(max-width:760px){.grid{grid-template-columns:1fr}main{padding:16px}section{padding:18px}h1{font-size:29px}.fields{grid-template-columns:1fr}}
+  </style>
+</head>
+<body>
+<header><div class="eyebrow">Churn Lab / model operations</div><h1>From customer data to better predictions.</h1><p>Upload labeled data, follow training, and measure predictions against real outcomes.</p></header>
+<main>
+  <section aria-labelledby="access"><h2 id="access">Connect to your workspace</h2><label for="key">Access key</label><input type="password" id="key" autocomplete="off" placeholder="Enter your prediction or administrator key"><p class="hint">Your key stays in this page’s memory. Administrator access is required for uploads and training controls.</p><button id="refresh">Refresh status</button><div id="connection" role="status" aria-live="polite"></div></section>
+  <div class="grid">
+    <div><section><h2>1. Add training data</h2><p class="hint">CSV, up to 10 MiB. Include the customer features and a churn column containing actual 0/1 outcomes. At least 100 rows and 10 examples of each class.</p><form id="upload"><label for="dataset">Labeled dataset</label><input type="file" id="dataset" accept=".csv,text/csv" required><button type="submit">Upload and queue training</button></form><button id="sample">Download sample CSV</button><p class="hint">The sample contains synthetic data for a demonstration.</p><div id="upload-result" role="status" aria-live="polite"></div></section>
+    <section><h2>2. Training and monitoring</h2><p id="model-state">Connect to see the deployed model.</p><div class="table-wrap"><table><caption>Latest candidate comparison</caption><thead><tr><th>Model</th><th>Validation AUC</th><th>F1</th></tr></thead><tbody id="candidates"></tbody></table></div><button id="retrain">Queue retraining</button><details><summary>Recent activity and monitoring</summary><pre id="activity">No status loaded.</pre></details><div id="training-result" role="status" aria-live="polite"></div></section></div>
+    <div><section><h2>3. Predict customer churn</h2><form id="predict"><div class="fields" id="customer-fields"></div><button type="submit">Get prediction</button></form><div id="prediction-result" role="status" aria-live="polite"></div></section>
+    <section><h2>4. Record the actual outcome</h2><p class="hint">Only submit the observed outcome. This feedback supports performance monitoring and future training.</p><form id="feedback"><label for="prediction-id">Prediction ID</label><input id="prediction-id" required><label for="actual-label">Actual outcome</label><select id="actual-label"><option value="0">Customer stayed</option><option value="1">Customer churned</option></select><button type="submit">Save outcome</button></form><div id="feedback-result" role="status" aria-live="polite"></div></section></div>
+  </div>
+</main>
+<script>
+const $=id=>document.getElementById(id);
+const fields=[['age','Age',35],['tenure_months','Tenure (months)',24],['monthly_charges','Monthly charges',65.5],['total_charges','Total charges',1572],['num_products','Number of products',2],['has_tech_support','Tech support',1],['has_online_security','Online security',0],['has_backup','Backup',1],['has_device_protection','Device protection',0],['is_senior_citizen','Senior citizen',0],['has_partner','Has partner',1],['has_dependents','Has dependents',0],['contract_type','Contract',['Month-to-month','One year','Two year']],['payment_method','Payment method',['Electronic check','Mailed check','Bank transfer (automatic)','Credit card (automatic)']],['internet_service','Internet service',['DSL','Fiber optic','No']]];
+for(const [name,label,value] of fields){const wrap=document.createElement('div'),l=document.createElement('label');l.htmlFor=name;l.textContent=label;let input=document.createElement(Array.isArray(value)||name.startsWith('has_')||name.startsWith('is_')?'select':'input');input.id=name;input.required=true;if(input.tagName==='SELECT'){const choices=Array.isArray(value)?value:['No','Yes'];choices.forEach((v,i)=>{const o=document.createElement('option');o.textContent=v;o.value=Array.isArray(value)?v:i;input.append(o)});if(!Array.isArray(value))input.value=value}else{input.type='number';input.step=name.includes('charges')?'0.01':'1';input.min='0';input.value=value}wrap.append(l,input);$('customer-fields').append(wrap)}
+async function api(path,method='GET',body){const headers={'X-API-Key':$('key').value};if(body&&!(body instanceof FormData))headers['Content-Type']='application/json';const response=await fetch(path,{method,headers,body:body instanceof FormData?body:body?JSON.stringify(body):undefined});if(!response.ok){let problem=await response.json();throw Error(typeof problem.detail==='string'?problem.detail:JSON.stringify(problem.detail))}return response}
+function message(id,text,error=false){const node=$(id);node.className='notice'+(error?' error':'');node.textContent=text}
+async function action(button,id,work){button.disabled=true;message(id,'Working…');try{await work()}catch(e){message(id,e.message,true)}finally{button.disabled=false}}
+$('refresh').onclick=e=>action(e.target,'connection',async()=>{const s=await(await api('/status')).json();$('model-state').textContent=s.serving_version?`Serving model version ${s.serving_version}. Latest evaluation: ${s.last_result?.decision||'pending'}.`:'Waiting for the first accepted model.';$('activity').textContent=JSON.stringify({training:s.training,requests:s.training_requests,monitoring:s.monitoring},null,2);$('candidates').replaceChildren();for(const c of s.last_result?.candidates||[]){const row=document.createElement('tr');for(const text of [c.model,c.auc.toFixed(3),c.f1.toFixed(3)]){const td=document.createElement('td');td.textContent=text;row.append(td)}$('candidates').append(row)}message('connection','Workspace connected. Status refreshed.')});
+$('upload').onsubmit=e=>{e.preventDefault();action(e.submitter,'upload-result',async()=>{const form=new FormData();form.append('file',$('dataset').files[0]);const r=await(await api('/datasets','POST',form)).json();message('upload-result',r.message)})};
+$('sample').onclick=e=>action(e.target,'upload-result',async()=>{const blob=await(await api('/sample-dataset')).blob();const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='sample-churn.csv';a.click();URL.revokeObjectURL(url);message('upload-result','Synthetic sample downloaded.')});
+$('retrain').onclick=e=>action(e.target,'training-result',async()=>{await api('/retrain','POST');message('training-result','Retraining queued. The scheduler checks every five minutes; refresh status to follow progress.')});
+$('predict').onsubmit=e=>{e.preventDefault();action(e.submitter,'prediction-result',async()=>{const payload={};for(const [name,,value]of fields)payload[name]=Array.isArray(value)?$(name).value:Number($(name).value);const r=await(await api('/predict','POST',payload)).json();$('prediction-id').value=r.prediction_id;message('prediction-result',`${r.prediction?'Churn predicted':'Customer predicted to stay'} · ${(r.probability*100).toFixed(1)}% churn probability · model ${r.model_version}. Prediction ID: ${r.prediction_id}`)})};
+$('feedback').onsubmit=e=>{e.preventDefault();action(e.submitter,'feedback-result',async()=>{await api('/feedback','POST',{prediction_id:$('prediction-id').value,actual_label:Number($('actual-label').value)});message('feedback-result','Actual outcome saved.')})};
+</script>
+</body></html>

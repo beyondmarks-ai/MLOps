@@ -2,8 +2,7 @@
 
 import logging
 import os
-from pathlib import Path
-from typing import Any, Dict, Optional, Tuple
+from typing import Any
 
 import mlflow
 import mlflow.sklearn
@@ -18,18 +17,14 @@ from sklearn.metrics import (
     recall_score,
     roc_auc_score,
 )
+from sklearn.pipeline import Pipeline
 
-from src.features.engineering import (
-    TRANSFORMER_ARTIFACT_NAME,
-    get_feature_names,
-    log_feature_importance,
-    run_feature_engineering,
-)
 from src.data.ingestion import (
-    TARGET_COLUMN,
-    ingest_data,
     load_latest_raw_data,
-    split_dataset,
+)
+from src.features.engineering import (
+    build_preprocessor,
+    log_feature_importance,
 )
 
 logger = logging.getLogger(__name__)
@@ -38,14 +33,14 @@ MLFLOW_TRACKING_URI = os.getenv("MLFLOW_TRACKING_URI", "http://localhost:5000")
 EXPERIMENT_NAME = os.getenv("MLFLOW_EXPERIMENT_NAME", "churn_prediction")
 MODEL_REGISTRY_NAME = os.getenv("MODEL_NAME", "ChurnModel")
 
-SUPPORTED_MODELS: Dict[str, Any] = {
+SUPPORTED_MODELS: dict[str, Any] = {
     "random_forest": RandomForestClassifier,
     "gradient_boosting": GradientBoostingClassifier,
     "logistic_regression": LogisticRegression,
 }
 
 
-def get_default_params(model_type: str) -> Dict[str, Any]:
+def get_default_params(model_type: str) -> dict[str, Any]:
     """Return sensible default hyperparameters for a given model type.
 
     Args:
@@ -54,13 +49,14 @@ def get_default_params(model_type: str) -> Dict[str, Any]:
     Returns:
         Dictionary of hyperparameters.
     """
-    defaults: Dict[str, Dict[str, Any]] = {
+    defaults: dict[str, dict[str, Any]] = {
         "random_forest": {
+            "class_weight": "balanced",
             "n_estimators": 200,
             "max_depth": 8,
             "min_samples_leaf": 20,
             "random_state": 42,
-            "n_jobs": -1,
+            "n_jobs": 2,
         },
         "gradient_boosting": {
             "n_estimators": 150,
@@ -70,6 +66,7 @@ def get_default_params(model_type: str) -> Dict[str, Any]:
             "random_state": 42,
         },
         "logistic_regression": {
+            "class_weight": "balanced",
             "C": 1.0,
             "max_iter": 1000,
             "random_state": 42,
@@ -83,7 +80,7 @@ def compute_metrics(
     y_true: np.ndarray,
     y_pred: np.ndarray,
     y_prob: np.ndarray,
-) -> Dict[str, float]:
+) -> dict[str, float]:
     """Compute classification metrics.
 
     Args:
@@ -109,10 +106,10 @@ def train_model(
     X_val: np.ndarray,
     y_val: np.ndarray,
     model_type: str = "random_forest",
-    params: Optional[Dict[str, Any]] = None,
-    run_name: Optional[str] = None,
-    tags: Optional[Dict[str, str]] = None,
-) -> Tuple[Any, str, Dict[str, float]]:
+    params: dict[str, Any] | None = None,
+    run_name: str | None = None,
+    tags: dict[str, str] | None = None,
+) -> tuple[Any, str, dict[str, float]]:
     """Train a classifier with MLflow experiment tracking.
 
     Args:
@@ -129,11 +126,13 @@ def train_model(
         Tuple of (trained_model, mlflow_run_id, validation_metrics).
     """
     if model_type not in SUPPORTED_MODELS:
-        raise ValueError(f"Unsupported model_type '{model_type}'. Choose from: {list(SUPPORTED_MODELS)}")
+        raise ValueError(
+            f"Unsupported model_type '{model_type}'. Choose from: {list(SUPPORTED_MODELS)}"
+        )
 
     mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
     mlflow.set_experiment(EXPERIMENT_NAME)
-    mlflow.sklearn.autolog(log_input_examples=True, log_model_signatures=True)
+    mlflow.sklearn.autolog(disable=True)
 
     if params is None:
         params = get_default_params(model_type)
@@ -151,7 +150,18 @@ def train_model(
         # Train
         model_class = SUPPORTED_MODELS[model_type]
         model = model_class(**params)
+        if isinstance(X_train, pd.DataFrame):
+            model = Pipeline([("preprocessor", build_preprocessor()), ("classifier", model)])
         model.fit(X_train, y_train)
+        mlflow.log_params(params)
+        example = X_train.iloc[:3] if isinstance(X_train, pd.DataFrame) else X_train[:3]
+        mlflow.sklearn.log_model(
+            model,
+            "model",
+            input_example=example,
+            signature=mlflow.models.infer_signature(example, model.predict(example)),
+            pip_requirements=["scikit-learn==1.4.2", "pandas==2.2.1", "numpy==1.26.4"],
+        )
 
         # Evaluate on validation set
         y_pred_val = model.predict(X_val)
@@ -171,7 +181,6 @@ def train_model(
 
         # Log feature importances if available
         if hasattr(model, "feature_importances_"):
-            from src.features.engineering import get_feature_names
             # We do best-effort feature name retrieval
             try:
                 feature_names = [f"feature_{i}" for i in range(X_train.shape[1])]
@@ -189,8 +198,8 @@ def register_model(
     run_id: str,
     model_name: str = MODEL_REGISTRY_NAME,
     auc_threshold: float = 0.75,
-    val_metrics: Optional[Dict[str, float]] = None,
-) -> Optional[str]:
+    val_metrics: dict[str, float] | None = None,
+) -> str | None:
     """Register model to MLflow Model Registry and promote to Staging if AUC > threshold.
 
     Args:
@@ -242,54 +251,11 @@ def register_model(
         return None
 
 
-def run_training_pipeline(
-    data_dir: str = "data/raw",
-    processed_dir: str = "data/processed",
-    model_type: str = "random_forest",
-    params: Optional[Dict[str, Any]] = None,
-    tags: Optional[Dict[str, str]] = None,
-) -> Dict[str, Any]:
-    """Orchestrate end-to-end training: load → features → train → register.
+def run_training_pipeline(data_dir: str = "data/raw") -> dict[str, Any]:
+    """Import the latest CSV partition and execute the complete shared lifecycle."""
+    from src.data import store
+    from src.training.lifecycle import run_cycle
 
-    Args:
-        data_dir: Directory with raw data partitions.
-        processed_dir: Directory for processed feature arrays.
-        model_type: Classifier type.
-        params: Optional hyperparameters.
-        tags: Optional MLflow tags.
-
-    Returns:
-        Dictionary with run_id, version, and metrics.
-    """
-    logger.info("Starting training pipeline")
-
-    # Load data
-    raw_df = load_latest_raw_data(data_dir)
-
-    # Split
-    train_df, val_df, test_df = split_dataset(raw_df)
-
-    # Feature engineering
-    X_train, y_train, X_val, y_val, X_test, y_test, preprocessor = run_feature_engineering(
-        train_df, val_df, test_df, output_dir=processed_dir
-    )
-
-    # Train
-    model, run_id, val_metrics = train_model(
-        X_train, y_train, X_val, y_val,
-        model_type=model_type,
-        params=params,
-        tags=tags,
-    )
-
-    # Register
-    version = register_model(run_id, val_metrics=val_metrics)
-
-    result = {
-        "run_id": run_id,
-        "version": version,
-        "val_metrics": val_metrics,
-        "model_type": model_type,
-    }
-    logger.info("Training pipeline complete: %s", result)
-    return result
+    store.initialize()
+    store.add_dataset(load_latest_raw_data(data_dir), "csv_pipeline")
+    return run_cycle()

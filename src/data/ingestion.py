@@ -1,10 +1,8 @@
 """Data ingestion module: loads, generates, and partitions churn data."""
 
 import logging
-import os
 from datetime import date
 from pathlib import Path
-from typing import Optional, Tuple
 
 import numpy as np
 import pandas as pd
@@ -148,7 +146,7 @@ def generate_synthetic_churn_data(
 
 
 def load_or_generate_data(
-    data_path: Optional[str] = None,
+    data_path: str | None = None,
     n_samples: int = 10000,
     random_state: int = 42,
 ) -> pd.DataFrame:
@@ -171,7 +169,9 @@ def load_or_generate_data(
     return df
 
 
-def save_raw_data(df: pd.DataFrame, base_dir: str = "data/raw", partition_date: Optional[str] = None) -> str:
+def save_raw_data(
+    df: pd.DataFrame, base_dir: str = "data/raw", partition_date: str | None = None
+) -> str:
     """Save raw data partitioned by date.
 
     Args:
@@ -222,7 +222,7 @@ def split_dataset(
     test_size: float = 0.2,
     val_size: float = 0.1,
     random_state: int = 42,
-) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """Split dataset into train, validation, and test sets.
 
     Args:
@@ -255,11 +255,11 @@ def split_dataset(
 
 
 def ingest_data(
-    data_path: Optional[str] = None,
+    data_path: str | None = None,
     base_dir: str = "data/raw",
     n_samples: int = 10000,
     random_state: int = 42,
-    partition_date: Optional[str] = None,
+    partition_date: str | None = None,
 ) -> str:
     """Full ingestion pipeline: load/generate, validate, and save.
 

@@ -1,0 +1,154 @@
+name: churn-mlops
+x-common: &common
+  restart: unless-stopped
+  logging:
+    driver: json-file
+    options: {max-size: "10m", max-file: "3"}
+x-airflow: &airflow
+  <<: *common
+  image: churn-airflow:local
+  build:
+    context: ..
+    dockerfile: docker/Dockerfile.orchestrator
+  volumes:
+    - app-data:/app/data
+    - reports:/app/monitoring
+    - airflow-logs:/opt/airflow/logs
+  depends_on:
+    init: {condition: service_completed_successfully}
+  environment:
+    DATABASE_URL: ${DATABASE_URL}
+    MLFLOW_TRACKING_URI: http://mlflow:5000
+    MODEL_NAME: ChurnModel
+    HPO_TRIALS: ${HPO_TRIALS:-3}
+    HPO_TIMEOUT: ${HPO_TIMEOUT:-90}
+    MIN_MODEL_AUC: ${MIN_MODEL_AUC:-0.55}
+    REPORTS_DIR: /app/monitoring/evidently_reports
+    SOURCE_CSV: ${SOURCE_CSV:-}
+    SOURCE_API_URL: ${SOURCE_API_URL:-}
+    SOURCE_DATABASE_URL: ${SOURCE_DATABASE_URL:-}
+    SOURCE_SQL: ${SOURCE_SQL:-}
+    AIRFLOW__CORE__EXECUTOR: LocalExecutor
+    AIRFLOW__CORE__PARALLELISM: "2"
+    AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+    AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "false"
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:${POSTGRES_PASSWORD}@postgres/airflow
+    AIRFLOW__CORE__FERNET_KEY: ${FERNET_KEY}
+    AIRFLOW__WEBSERVER__SECRET_KEY: ${AIRFLOW_SECRET_KEY}
+    AIRFLOW__WEBSERVER__WORKERS: "2"
+services:
+  postgres:
+    <<: *common
+    image: postgres:15
+    environment:
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: airflow
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./init-postgres.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -U airflow"]
+      interval: 10s
+      retries: 10
+  mysql:
+    <<: *common
+    image: mysql:8.4
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: churn
+      MYSQL_USER: mlops
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+    volumes: [mysql-data:/var/lib/mysql]
+    healthcheck:
+      test: [CMD-SHELL, 'mysqladmin ping -h localhost -u root -p"$$MYSQL_ROOT_PASSWORD"']
+      interval: 10s
+      retries: 20
+  init:
+    <<: *common
+    image: churn-airflow:local
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.orchestrator
+    user: "0:0"
+    restart: "no"
+    entrypoint: /bin/bash
+    command: ["-c", "mkdir -p /app/data /app/monitoring /opt/airflow/logs && chown -R 50000:0 /app/data /app/monitoring /opt/airflow/logs && su airflow -s /bin/bash -c 'airflow db migrate' && su airflow -s /bin/bash -c 'python -c \"from src.data.store import initialize; initialize()\"'"]
+    environment:
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:${POSTGRES_PASSWORD}@postgres/airflow
+      AIRFLOW__CORE__FERNET_KEY: ${FERNET_KEY}
+      DATABASE_URL: ${DATABASE_URL}
+    volumes: [app-data:/app/data, reports:/app/monitoring, airflow-logs:/opt/airflow/logs]
+    depends_on:
+      postgres: {condition: service_healthy}
+      mysql: {condition: service_healthy}
+  mlflow:
+    <<: *common
+    image: churn-runtime:local
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.runtime
+    command: ["mlflow", "server", "--host", "0.0.0.0", "--port", "5000", "--backend-store-uri", "postgresql+psycopg2://airflow:${POSTGRES_PASSWORD}@postgres/mlflow", "--artifacts-destination", "${MLFLOW_ARTIFACT_ROOT:-/app/data/mlartifacts}", "--serve-artifacts"]
+    volumes: [app-data:/app/data]
+    depends_on:
+      postgres: {condition: service_healthy}
+      init: {condition: service_completed_successfully}
+    healthcheck:
+      test: [CMD, curl, -f, http://localhost:5000/health]
+      interval: 15s
+      retries: 20
+  api: &api
+    <<: *common
+    image: churn-runtime:local
+    mem_limit: 1g
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      MLFLOW_TRACKING_URI: http://mlflow:5000
+      MODEL_NAME: ChurnModel
+      API_KEY: ${API_KEY}
+      ADMIN_API_KEY: ${ADMIN_API_KEY}
+      MODEL_REFRESH_SECONDS: ${MODEL_REFRESH_SECONDS:-30}
+      AZURE_STORAGE_ACCOUNT: ${AZURE_STORAGE_ACCOUNT:-}
+    volumes: [app-data:/app/data, reports:/app/monitoring]
+    depends_on:
+      init: {condition: service_completed_successfully}
+      mlflow: {condition: service_healthy}
+    healthcheck:
+      test: [CMD, curl, -f, http://localhost:8000/live]
+      interval: 15s
+      retries: 10
+  api2:
+    <<: *api
+  scheduler:
+    <<: *airflow
+    command: scheduler
+    healthcheck:
+      test: [CMD-SHELL, 'airflow jobs check --job-type SchedulerJob --hostname "$$HOSTNAME"']
+      interval: 30s
+      timeout: 20s
+      retries: 5
+  airflow:
+    <<: *airflow
+    command: webserver
+    ports: ["127.0.0.1:8080:8080"]
+  caddy:
+    <<: *common
+    image: caddy:2.10
+    environment:
+      APP_HOST: ${APP_HOST}
+    ports: ["80:80", "443:443"]
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      api: {condition: service_healthy}
+      api2: {condition: service_healthy}
+volumes:
+  app-data:
+  reports:
+  mysql-data:
+  postgres-data:
+  airflow-logs:
+  caddy-data:
+  caddy-config:

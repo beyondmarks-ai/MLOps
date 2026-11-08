@@ -1,9 +1,9 @@
 """Tests for FastAPI serving application."""
 
-import pandas as pd
+from unittest.mock import MagicMock, patch
+
 import pytest
 from fastapi.testclient import TestClient
-from unittest.mock import MagicMock, patch
 
 # We patch the model loader so tests don't need a running MLflow instance
 MOCK_MODEL_NAME = "ChurnModel"
@@ -31,7 +31,6 @@ SAMPLE_PAYLOAD = {
 
 def make_mock_model():
     """Create a mock sklearn-compatible classifier."""
-    import numpy as np
 
     mock = MagicMock()
     mock.predict.return_value = [0]
@@ -40,9 +39,8 @@ def make_mock_model():
 
 
 @pytest.fixture
-def client(tmp_path):
+def client(tmp_path, monkeypatch):
     """FastAPI TestClient with mocked model loader and predictions store."""
-    from src.serving import app as serving_module
 
     mock_loaded = MagicMock()
     mock_loaded.model = make_mock_model()
@@ -50,15 +48,24 @@ def client(tmp_path):
     mock_loaded.version = MOCK_MODEL_VERSION
     mock_loaded.stage = MOCK_MODEL_STAGE
 
-    predictions_file = str(tmp_path / "predictions.csv")
+    from src.data import store
 
-    with patch("src.serving.app.load_model_from_registry", return_value=mock_loaded), \
-         patch("src.serving.app.PREDICTIONS_STORE", predictions_file), \
-         patch("src.serving.app._loaded_model", mock_loaded):
+    monkeypatch.setenv("DATABASE_URL", "sqlite:///" + (tmp_path / "test.db").as_posix())
+    monkeypatch.setenv("API_KEY", "test-user-key")
+    monkeypatch.setenv("ADMIN_API_KEY", "test-admin-key")
+    store.engine.cache_clear()
 
+    with (
+        patch("src.serving.app.load_model_from_registry", return_value=mock_loaded),
+        patch("src.serving.app.refresh_model"),
+        patch("src.serving.app._loaded_model", mock_loaded),
+    ):
         from src.serving.app import app
-        with TestClient(app) as c:
+
+        with TestClient(app, headers={"X-API-Key": "test-user-key"}) as c:
             yield c
+    store.engine().dispose()
+    store.engine.cache_clear()
 
 
 class TestHealthEndpoint:
@@ -125,7 +132,7 @@ class TestMetricsEndpoint:
         text = client.get("/metrics").text
         assert "churn_api_requests_total" in text
         assert "churn_api_errors_total" in text
-        assert "churn_prediction_distribution" in text
+        assert "churn_api_avg_latency_ms" in text
 
 
 class TestFeedbackEndpoint:
@@ -135,7 +142,7 @@ class TestFeedbackEndpoint:
         payload = {"prediction_id": "nonexistent-uuid", "actual_label": 1}
         response = client.post("/feedback", json=payload)
         # 404 because prediction_id doesn't exist, or 500 if store missing
-        assert response.status_code in (404, 500)
+        assert response.status_code == 404
 
     def test_feedback_invalid_label(self, client):
         payload = {"prediction_id": "some-id", "actual_label": 5}  # > 1

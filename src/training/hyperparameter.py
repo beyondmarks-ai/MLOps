@@ -2,12 +2,13 @@
 
 import logging
 import os
-from typing import Any, Dict, Optional
+from typing import Any
 
 import mlflow
 import numpy as np
 import optuna
 from sklearn.ensemble import GradientBoostingClassifier, RandomForestClassifier
+from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import roc_auc_score
 
 optuna.logging.set_verbosity(optuna.logging.WARNING)
@@ -31,9 +32,9 @@ def _rf_objective(
         "min_samples_leaf": trial.suggest_int("min_samples_leaf", 5, 50),
         "max_features": trial.suggest_categorical("max_features", ["sqrt", "log2", None]),
         "random_state": 42,
-        "n_jobs": -1,
+        "n_jobs": 2,
     }
-    model = RandomForestClassifier(**params)
+    model = RandomForestClassifier(class_weight="balanced", **params)
     model.fit(X_train, y_train)
     y_prob = model.predict_proba(X_val)[:, 1]
     return roc_auc_score(y_val, y_prob)
@@ -61,9 +62,21 @@ def _gb_objective(
     return roc_auc_score(y_val, y_prob)
 
 
+def _lr_objective(trial, X_train, y_train, X_val, y_val):
+    model = LogisticRegression(
+        class_weight="balanced",
+        C=trial.suggest_float("C", 0.001, 100, log=True),
+        max_iter=1000,
+        random_state=42,
+    )
+    model.fit(X_train, y_train)
+    return roc_auc_score(y_val, model.predict_proba(X_val)[:, 1])
+
+
 OBJECTIVES = {
     "random_forest": _rf_objective,
     "gradient_boosting": _gb_objective,
+    "logistic_regression": _lr_objective,
 }
 
 
@@ -74,9 +87,9 @@ def optimize_hyperparameters(
     y_val: np.ndarray,
     model_type: str = "random_forest",
     n_trials: int = 30,
-    timeout: Optional[int] = 600,
-    study_name: Optional[str] = None,
-) -> Dict[str, Any]:
+    timeout: int | None = 600,
+    study_name: str | None = None,
+) -> dict[str, Any]:
     """Run Optuna hyperparameter search and log results to MLflow.
 
     Args:

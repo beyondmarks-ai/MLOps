@@ -1,10 +1,8 @@
 """Alerting module: triggers Airflow retraining DAG and sends Slack/email notifications."""
 
-import json
 import logging
 import os
 from datetime import datetime
-from typing import Dict, Optional
 
 import requests
 
@@ -19,7 +17,7 @@ RETRAINING_DAG_ID = "retraining_pipeline"
 
 def trigger_retraining_dag(
     trigger_reason: str = "drift_detected",
-    conf: Optional[Dict] = None,
+    conf: dict | None = None,
 ) -> bool:
     """Trigger the retraining DAG via Airflow REST API.
 
@@ -96,7 +94,7 @@ def send_slack_notification(
 
 def alert_on_drift(
     report_dir: str,
-    drift_score: Optional[float] = None,
+    drift_score: float | None = None,
     auto_retrain: bool = True,
 ) -> None:
     """Send drift alerts and optionally trigger retraining.
