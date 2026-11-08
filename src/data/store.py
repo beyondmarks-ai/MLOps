@@ -161,7 +161,7 @@ def add_dataset(df, source="upload"):
 
 def training_data():
     with engine().connect() as conn:
-        rows = conn.execute(select(samples)).mappings().all()
+        rows = conn.execute(select(samples).order_by(samples.c.id)).mappings().all()
     return {
         split: pd.DataFrame(
             [{**r["features"], TARGET_COLUMN: r["label"]} for r in rows if r["split"] == split]

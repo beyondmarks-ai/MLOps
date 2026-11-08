@@ -1,6 +1,6 @@
 # Current coverage against report02.pdf
 
-Updated 2026-11-08 after implementation and Azure deployment. Page references refer to the 18-page [report](../report02.pdf). The [original comparison](report02-coverage.md) remains as the historical baseline.
+Updated 2026-11-08 after implementation, verified GitHub OIDC deployment, and activation of the [public fictional telecom benchmark](benchmark.md). Page references refer to the 18-page [report](../report02.pdf). The [original comparison](report02-coverage.md) remains as the historical baseline.
 
 | Report requirement | Pages | Current coverage | Evidence / remaining work |
 |---|---|---|---|

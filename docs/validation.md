@@ -2,6 +2,16 @@
 
 Application: https://churn-mlops-617db570.centralindia.cloudapp.azure.com
 
+## Current benchmark and GitHub deployment
+
+The active model is **MavenChurnModel version 1**, Gradient Boosting, using the public fictional telecom benchmark in its own MySQL database. [Benchmark provenance and metrics](benchmark.md) documents mappings, exclusions and threshold tradeoffs. The old synthetic database still contains 3,000 samples; the benchmark contains 6,588 unique samples. Twelve live HTTPS predictions and feedback submissions passed, including the exact class-versus-stored-threshold check.
+
+The benchmark commit passed **105 tests with 88.05% coverage on GitHub Linux**, plus lint and both Docker image builds: [CI run](https://github.com/beyondmarks-ai/MLOps/actions/runs/42460216245). Local Windows tests also passed (105 tests, 88.03% coverage).
+
+OIDC authentication and actual deployment were verified through GitHub: [initial deployment](https://github.com/beyondmarks-ai/MLOps/actions/runs/42459464726) and [benchmark code deployment](https://github.com/beyondmarks-ai/MLOps/actions/runs/42460216346). Both checked the exact commit, both API instances and public HTTPS, then returned an initially stopped VM to deallocated state. The initial OIDC subject mismatch was corrected using GitHub's actual subject, including immutable owner/repository IDs. No stored client secret or SSH key is used by GitHub.
+
+The sections below preserve earlier deployment evidence; their model-3 synthetic metrics are historical, not the active benchmark results.
+
 ## On-demand control follow-up
 
 The Windows [launcher](../Backend-Control.cmd) was added after the original deployment validation. Five focused tests passed for readiness polling, deallocation, timeouts, error propagation, action validation and fixed Azure resource scope. A Tkinter smoke check verified window creation, four button bindings and asynchronous completion. The window opened successfully; visual inspection was denied because Computer Use was not approved to access `pythonw`.
