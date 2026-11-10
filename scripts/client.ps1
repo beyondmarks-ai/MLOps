@@ -46,19 +46,61 @@ function Protect-PrivateDirectory([string]$Path) {
     ([IO.DirectoryInfo]::new($Path)).SetAccessControl($acl)
 }
 
+function New-SingleFileInstaller([string]$InstallerText, [string]$CredentialText) {
+    $bundle = @{ installer = $InstallerText; credentials = $CredentialText } | ConvertTo-Json -Compress
+    $encoded = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($bundle))
+    $sha = [Security.Cryptography.SHA256]::Create()
+    try { $id = ([BitConverter]::ToString($sha.ComputeHash([Text.Encoding]::UTF8.GetBytes($bundle)))).Replace('-','').ToLowerInvariant() }
+    finally { $sha.Dispose() }
+    $runner = @'
+$ErrorActionPreference = 'Stop'
+Set-StrictMode -Version Latest
+function Protect-PrivateDirectory {
+__PROTECT__
+}
+try {
+    $bundle = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('__BUNDLE__')) | ConvertFrom-Json
+    $directory = Join-Path $env:LOCALAPPDATA 'MLOps-Setup\__ID__'
+    Protect-PrivateDirectory $directory
+    $installer = Join-Path $directory 'install-client.ps1'
+    $credentials = Join-Path $directory 'credentials.env'
+    [IO.File]::WriteAllText($installer,$bundle.installer,[Text.UTF8Encoding]::new($false))
+    [IO.File]::WriteAllText($credentials,$bundle.credentials,[Text.UTF8Encoding]::new($false))
+    & $installer -CredentialsFile $credentials
+    if (-not $?) { exit 1 }
+    exit 0
+} catch {
+    Write-Host 'Setup could not finish. Check folder permissions and the setup error, then run this file again.' -ForegroundColor Red
+    exit 1
+}
+'@
+    $runner = $runner.Replace('__PROTECT__',(Get-Command Protect-PrivateDirectory).ScriptBlock.ToString()).Replace('__BUNDLE__',$encoded).Replace('__ID__',$id)
+    $payload = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($runner))
+    # Encoding packages the payload; it does not encrypt or hide the credentials.
+    $launcher = @'
+@echo off
+setlocal
+set "MLOPS_SETUP_SELF=%~f0"
+powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "$parts=[IO.File]::ReadAllText($env:MLOPS_SETUP_SELF) -split '(?m)^:MLOPS_PAYLOAD\r?$',2; if($parts.Count -ne 2){exit 1}; & ([scriptblock]::Create([Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($parts[1].Trim()))))"
+set "MLOPS_SETUP_EXIT=%ERRORLEVEL%"
+echo.
+if not "%MLOPS_SETUP_EXIT%"=="0" echo Setup stopped. Resolve the reported issue, then run this same file again.
+pause
+exit /b %MLOPS_SETUP_EXIT%
+:MLOPS_PAYLOAD
+__PAYLOAD__
+'@
+    return ($launcher.Replace('__PAYLOAD__',$payload) -replace '\r?\n',"`r`n")
+}
+
 function Export-ClientPackage([string]$Source, [string]$Destination) {
     $credentials = Read-SharedCredentials $Source
     if (Test-Path -LiteralPath $Destination) { throw 'The private package directory already exists. Keep the existing package or move it before exporting again.' }
     Protect-PrivateDirectory $Destination
     $lines = foreach ($key in $CredentialNames) { "$key=$($credentials[$key])" }
-    [IO.File]::WriteAllLines((Join-Path $Destination 'credentials.env'),[string[]]$lines,[Text.UTF8Encoding]::new($false))
-    Copy-Item -LiteralPath "$PSScriptRoot\install-client.ps1" -Destination $Destination
-    $launcher = "@echo off`r`npowershell.exe -NoProfile -ExecutionPolicy Bypass -File `"%~dp0install-client.ps1`" -CredentialsFile `"%~dp0credentials.env`"`r`npause`r`n"
+    $launcher = New-SingleFileInstaller ([IO.File]::ReadAllText("$PSScriptRoot\install-client.ps1")) ($lines -join "`n")
     [IO.File]::WriteAllText((Join-Path $Destination 'Install-MLOps.cmd'),$launcher,[Text.UTF8Encoding]::new($false))
-    [IO.File]::WriteAllText((Join-Path $Destination 'READ-ME.txt'),"PRIVATE: contains the owner's live project credentials. Share only with the intended client using a secure file transfer. Extract all files into a private folder, then double-click Install-MLOps.cmd. Approve Windows/Docker prompts; after any requested restart run the same launcher again. Existing installations with different credentials are not overwritten. This ZIP is not encrypted. See https://github.com/beyondmarks-ai/MLOps/blob/main/docs/client-install.md")
-    $files = @('credentials.env','install-client.ps1','Install-MLOps.cmd','READ-ME.txt') | ForEach-Object { Join-Path $Destination $_ }
-    Compress-Archive -LiteralPath $files -DestinationPath (Join-Path $Destination 'MLOps-Client-Setup.zip')
-    Write-Host "Private package created: $Destination\MLOps-Client-Setup.zip"
+    Write-Host "Private single-file installer created: $Destination\Install-MLOps.cmd"
 }
 
 function New-Secret([switch]$Fernet) {
@@ -209,7 +251,7 @@ function Main {
     if ($CredentialsFile -and $Action -notin @('Install','ExportCredentials')) { throw '-CredentialsFile applies only to Install or ExportCredentials.' }
     if ($Action -eq 'ExportCredentials') {
         if (-not $CredentialsFile) { throw 'Supply -CredentialsFile with the existing project runtime.env or .env path.' }
-        Export-ClientPackage $CredentialsFile (Join-Path $Root '.client-transfer')
+        Export-ClientPackage $CredentialsFile (Join-Path $Root '.client-transfer\single-file')
         return
     }
     if ($Action -eq 'Menu') {

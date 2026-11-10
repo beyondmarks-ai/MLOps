@@ -2,7 +2,7 @@
 
 An application that predicts whether a customer is likely to leave a service. It includes a dashboard, a prediction API, model training, model history, and scheduled monitoring.
 
-**Installing for a client using the project owner's credentials? Get the private setup ZIP, extract it, and double-click `Install-MLOps.cmd`.** The script sets up the application on the client's Windows PC. No Azure subscription or separate Python installation is needed.
+**Installing for a client using the project owner's credentials? Get the private `Install-MLOps.cmd` file and double-click it.** This one file sets up the application on the client's Windows PC. No ZIP extraction, separate credentials file, Azure subscription, or separate Python installation is needed.
 
 [Install on Windows](#install-on-windows) · [Start and stop](#start-and-stop-the-application) · [Troubleshooting](#troubleshooting) · [Owner instructions](#for-the-project-owner) · [Technical documentation](#technical-documentation)
 
@@ -33,34 +33,25 @@ Windows may request a restart. Docker Desktop may ask you to accept its terms an
 
 ## Install on Windows
 
-### 1. Get and extract the private setup package
+### 1. Get the private installer
 
-Ask the project owner for **`MLOps-Client-Setup.zip`** through a private, secure channel. This package uses the owner's existing project credentials.
+Ask the project owner for **`Install-MLOps.cmd`** through a private, secure channel. Save it in a private folder on your PC. It contains the setup code and the owner's existing project credentials.
 
-**GitHub's “Download ZIP” button downloads the source code, not this private setup package.** The owner's credentials are not published on GitHub.
+**GitHub's “Download ZIP” button downloads source code, not this private installer.** The owner's credentials are not published on GitHub.
 
-Right-click the private ZIP, choose **Extract All**, and extract it into a private folder on your PC. You should see:
-
-```text
-Install-MLOps.cmd
-install-client.ps1
-credentials.env
-READ-ME.txt
-```
-
-Keep these files together. The ZIP and `credentials.env` contain live passwords and keys: **do not upload them to GitHub or put them in a shared folder.** The ZIP is not encrypted.
+You only need this **one file**. It prepares its own working files automatically. **Do not upload it to GitHub or put it in a shared folder:** its embedded credentials are encoded for packaging, not encrypted.
 
 ### 2. Run the installer
 
-Double-click **`Install-MLOps.cmd`** in the extracted folder.
+Double-click **`Install-MLOps.cmd`**.
 
 If you prefer the command line, open **Windows PowerShell in that folder** and run:
 
 ```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\install-client.ps1 -CredentialsFile .\credentials.env
+.\Install-MLOps.cmd
 ```
 
-The execution-policy setting applies only to this PowerShell process. Use your normal Windows account and approve the individual administrator prompts when asked.
+Use your normal Windows account and approve the individual administrator prompts when asked. The launcher uses a process-only PowerShell execution-policy setting; it does not change your system's execution policy.
 
 During setup:
 
@@ -71,6 +62,7 @@ During setup:
 
 The installer automatically:
 
+- Prepares its working files in a protected folder under `%LOCALAPPDATA%\MLOps-Setup`.
 - Clones this repository into `%LOCALAPPDATA%\MLOps`.
 - Builds the containers and installs application dependencies.
 - Creates local databases and configures Airflow and MLflow.
@@ -151,7 +143,7 @@ To create the private client package, run this from your existing project checko
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\client.ps1 -Action ExportCredentials -CredentialsFile .\.azure-local\runtime.env
 ```
 
-The output is **`.client-transfer\MLOps-Client-Setup.zip`**. Send that ZIP privately to the intended client. The export folder is excluded from Git and Docker builds. An existing export folder is not overwritten; retain or move the previous package before creating another one.
+The output is **`.client-transfer\single-file\Install-MLOps.cmd`**. Send just this file privately to the intended client. The export folder is excluded from Git and Docker builds. An existing export folder is not overwritten; retain or move the previous single-file export before creating another one. Older ZIP packages remain usable but are no longer needed for a new handoff.
 
 The public repository contains **no credentials**. A fresh clone alone cannot recreate this private package without the owner's credential file.
 
@@ -185,7 +177,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\test-client.ps
 
 Airflow runs in its Linux container. The normal client installation does not require this developer setup.
 
-Automated checks cover application tests, Windows credential import and setup helpers, and a fresh Docker installation with login, prediction, stop/start, and data preservation. See [CI](https://github.com/beyondmarks-ai/MLOps/actions/workflows/ci.yml) and [client installer checks](https://github.com/beyondmarks-ai/MLOps/actions/workflows/client.yml). A clean Windows PC still needs a trial for its hardware, permissions, WSL setup, and Docker first-launch prompts.
+Automated checks cover application tests, actual single-file CMD extraction and reruns, credential import, failure reporting, and a fresh Docker installation with login, prediction, stop/start, and data preservation. See [CI](https://github.com/beyondmarks-ai/MLOps/actions/workflows/ci.yml) and [client installer checks](https://github.com/beyondmarks-ai/MLOps/actions/workflows/client.yml). A clean Windows PC still needs a trial for its hardware, permissions, WSL setup, and Docker first-launch prompts.
 
 ## Technical documentation
 

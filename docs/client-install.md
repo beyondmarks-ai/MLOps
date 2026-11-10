@@ -26,11 +26,16 @@ they do not establish accuracy for the client's customers.
 
 ### Use the owner's existing project credentials
 
-For the shared-credentials setup, the owner supplies **MLOps-Client-Setup.zip**
-privately. Extract every file into a private folder and double-click
-**Install-MLOps.cmd**. Keep `credentials.env` alongside the installer. After a
-requested Windows restart, run the same launcher again. Never upload this ZIP or
-`credentials.env` to GitHub: the archive contains live secrets and is not encrypted.
+For the shared-credentials setup, the owner supplies one private file:
+**Install-MLOps.cmd**. Save it in a private folder and double-click it. You do not
+need a ZIP, separate PowerShell script, or separate credentials file. After a
+requested Windows restart, run the same file again.
+
+The file packages the bootstrap script and credentials, prepares them under
+`%LOCALAPPDATA%\MLOps-Setup\<package-id>` with restricted Windows permissions, and
+starts installation. Reruns use the same working directory. Encoding packages the
+embedded data; it does not encrypt it. Never upload this file to GitHub or a public
+location: it contains live project secrets.
 
 The installer reuses the existing prediction key, administrator key, MySQL user/root
 passwords, PostgreSQL password, Airflow administrator password, Airflow web secret,
@@ -45,13 +50,17 @@ The owner can create the private package from the repository with:
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\client.ps1 -Action ExportCredentials -CredentialsFile .\.azure-local\runtime.env
 ```
 
-The output is `.client-transfer\MLOps-Client-Setup.zip`, protected with Windows
-permissions and excluded from Git and Docker builds. Transfer it only to the
-intended client through a secure file-sharing method. An existing export directory
-is never overwritten. To use a separate credentials file without the ZIP:
+The output is `.client-transfer\single-file\Install-MLOps.cmd`, protected with
+Windows permissions and excluded from Git and Docker builds. Transfer only this
+file to the intended client through a secure file-sharing method. An existing
+single-file export directory is never overwritten. The older multi-file ZIP is
+still compatible if a client already has it.
+
+For advanced use, the public `scripts/install-client.ps1` also accepts a separate
+private credentials file. From a repository checkout:
 
 ```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\install-client.ps1 -CredentialsFile 'C:\Private\credentials.env'
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\install-client.ps1 -CredentialsFile 'C:\Private\credentials.env'
 ```
 
 Import requires the full credential set in unquoted `KEY=value` format, using

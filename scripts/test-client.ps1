@@ -8,6 +8,17 @@ foreach ($file in @('client.ps1','install-client.ps1')) {
 }
 . "$PSScriptRoot\client.ps1"
 function Assert($Condition,[string]$Message) { if (-not $Condition) { throw $Message } }
+function Read-InstallerBundle([string]$Path) {
+    $parts = [IO.File]::ReadAllText($Path) -split '(?m)^:MLOPS_PAYLOAD\r?$',2
+    Assert ($parts.Count -eq 2) 'Single-file payload marker missing'
+    $runner = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($parts[1].Trim()))
+    $parseErrors = $null
+    $tokens = $null
+    $null = [Management.Automation.Language.Parser]::ParseInput($runner,[ref]$tokens,[ref]$parseErrors)
+    Assert (-not $parseErrors) 'Generated PowerShell payload has syntax errors'
+    $encoded = [regex]::Match($runner,"FromBase64String\('([^']+)'\)").Groups[1].Value
+    return ([Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($encoded)) | ConvertFrom-Json)
+}
 $first = New-Secret
 Assert ($first -match '^[0-9a-f]{64}$') 'Invalid secret format'
 Assert ($first -ne (New-Secret)) 'Secrets must be independent'
@@ -52,11 +63,40 @@ try {
     Assert ($imported.AZURE_STORAGE_ACCOUNT -eq '') 'Owner Azure configuration was copied'
     $package = Join-Path $testDirectory 'package'
     Export-ClientPackage $source $package
-    $exported = Read-SharedCredentials (Join-Path $package 'credentials.env')
+    $bundle = Read-InstallerBundle (Join-Path $package 'Install-MLOps.cmd')
+    Assert ($bundle.installer -ceq [IO.File]::ReadAllText("$PSScriptRoot\install-client.ps1")) 'Embedded bootstrap differs from source'
+    $extracted = Join-Path $testDirectory 'extracted.env'
+    [IO.File]::WriteAllText($extracted,$bundle.credentials)
+    $exported = Read-SharedCredentials $extracted
     Assert ($exported.Count -eq $CredentialNames.Count) 'Package contains unexpected configuration'
     Assert ($exported.CLIENT_ADMIN_PASSWORD -ceq $config.CLIENT_ADMIN_PASSWORD) 'Airflow credential alias changed the password'
-    Assert (Test-Path -LiteralPath (Join-Path $package 'MLOps-Client-Setup.zip')) 'Private archive was not created'
+    Assert (@(Get-ChildItem -LiteralPath $package).Count -eq 1) 'Export requires more than one client file'
     Assert ((Get-Acl -LiteralPath $package).AreAccessRulesProtected) 'Exported package has inherited public access'
+    # Execute the real CMD extraction using a harmless bootstrap, including paths with shell metacharacters.
+    $fakeBootstrap = @'
+param([string]$CredentialsFile)
+$ErrorActionPreference = 'Stop'
+if ([IO.File]::ReadAllText($CredentialsFile) -cne 'test-credentials') { exit 8 }
+if (-not (Get-Acl -LiteralPath $PSScriptRoot).AreAccessRulesProtected) { exit 9 }
+[IO.File]::WriteAllText((Join-Path $PSScriptRoot 'verified.txt'),'passed')
+exit 0
+'@
+    $singleFile = Join-Path $testDirectory 'Install & verify (test).cmd'
+    [IO.File]::WriteAllText($singleFile,(New-SingleFileInstaller $fakeBootstrap 'test-credentials'))
+    $savedLocalAppData = $env:LOCALAPPDATA
+    try {
+        $env:LOCALAPPDATA = $testDirectory
+        '' | & $singleFile | Out-Null
+        Assert ($LASTEXITCODE -eq 0) 'Single-file CMD failed to extract and invoke the bootstrap'
+        '' | & $singleFile | Out-Null
+        Assert ($LASTEXITCODE -eq 0) 'Single-file CMD failed on rerun'
+        $checks = @(Get-ChildItem -LiteralPath (Join-Path $testDirectory 'MLOps-Setup') -Filter verified.txt -Recurse)
+        Assert ($checks.Count -eq 1) 'Rerun did not reuse its private setup directory'
+        $failureFile = Join-Path $testDirectory 'Fail.cmd'
+        [IO.File]::WriteAllText($failureFile,(New-SingleFileInstaller 'param([string]$CredentialsFile); exit 7' 'test-credentials'))
+        '' | & $failureFile | Out-Null
+        Assert ($LASTEXITCODE -ne 0) 'Single-file CMD hid bootstrap failure'
+    } finally { $env:LOCALAPPDATA = $savedLocalAppData }
     $snapshot = [IO.File]::ReadAllText($ConfigPath)
     [IO.File]::WriteAllLines($source,[string[]]($sharedLines | ForEach-Object { if ($_ -match '^API_KEY=') { 'API_KEY=different-value' } else { $_ } }))
     $rejected = $false
@@ -82,9 +122,20 @@ try {
     Write-Host 'Client script checks passed.'
 } finally {
     # Remove only these explicitly named temporary files, never a recursive computed path.
-    foreach ($name in @('.env','.env.tmp','docker.cmd','shared.env','package\credentials.env','package\install-client.ps1','package\Install-MLOps.cmd','package\READ-ME.txt','package\MLOps-Client-Setup.zip')) {
+    foreach ($name in @('.env','.env.tmp','docker.cmd','shared.env','extracted.env','Install & verify (test).cmd','Fail.cmd','package\Install-MLOps.cmd')) {
         $path = Join-Path $testDirectory $name
         if (Test-Path -LiteralPath $path) { Remove-Item -LiteralPath $path }
+    }
+    $setupCache = Join-Path $testDirectory 'MLOps-Setup'
+    if (Test-Path -LiteralPath $setupCache) {
+        foreach ($folder in Get-ChildItem -LiteralPath $setupCache -Directory) {
+            foreach ($name in @('install-client.ps1','credentials.env','verified.txt')) {
+                $path = Join-Path $folder.FullName $name
+                if (Test-Path -LiteralPath $path) { Remove-Item -LiteralPath $path }
+            }
+            Remove-Item -LiteralPath $folder.FullName
+        }
+        Remove-Item -LiteralPath $setupCache
     }
     $packagePath = Join-Path $testDirectory 'package'
     if (Test-Path -LiteralPath $packagePath) { Remove-Item -LiteralPath $packagePath }
