@@ -115,6 +115,10 @@ installer does not configure scheduled/off-PC backups.
 - **Build/training fails:** check disk/RAM/network, use Status, then Install to
   resume. Credentials and volumes are not regenerated. Download checksum mismatch
   intentionally stops installation until the changed dataset is reviewed.
+- **Power loss during training:** the existing pipeline uses a two-hour training
+  lease to prevent duplicate trainers. An abruptly killed job can delay recovery
+  until that lease expires. Leave the backend running so Airflow can retry, then
+  use Start again to check readiness; do not delete credentials or volumes.
 - **Port already in use after setup:** close the conflicting application or change
   the corresponding port in `.client\.env`, then run Start to recreate the port
   mapping and refresh shortcuts/credential instructions.
