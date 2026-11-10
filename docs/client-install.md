@@ -1,8 +1,9 @@
 # Install on a client's Windows PC
 
 This installs a separate local copy: dashboard, prediction API, MySQL, MLflow,
-Airflow, automatic training and monitoring. It generates new credentials for the
-client. No Azure subscription, Azure credit, Python installation or GitHub login
+Airflow, automatic training and monitoring. It can reuse the owner's existing
+project credentials through a private setup package; the public installer generates
+new credentials when no credentials file is supplied. No Azure subscription, Azure credit, Python installation or GitHub login
 is needed. Initial predictions use the public fictional telecom benchmark;
 they do not establish accuracy for the client's customers.
 
@@ -22,6 +23,50 @@ they do not establish accuracy for the client's customers.
   need a paid Docker subscription: https://docs.docker.com/subscription/desktop-license/
 
 ## Client installation
+
+### Use the owner's existing project credentials
+
+For the shared-credentials setup, the owner supplies **MLOps-Client-Setup.zip**
+privately. Extract every file into a private folder and double-click
+**Install-MLOps.cmd**. Keep `credentials.env` alongside the installer. After a
+requested Windows restart, run the same launcher again. Never upload this ZIP or
+`credentials.env` to GitHub: the archive contains live secrets and is not encrypted.
+
+The installer reuses the existing prediction key, administrator key, MySQL user/root
+passwords, PostgreSQL password, Airflow administrator password, Airflow web secret,
+and Fernet key. It creates the local Airflow login as `admin`. The source setting
+`AIRFLOW_ADMIN_PASSWORD` is mapped to the local setting `CLIENT_ADMIN_PASSWORD`.
+Database addresses and artifact paths are still configured for the client's PC.
+Azure/GitHub sign-in credentials and cloud configuration are not included.
+
+The owner can create the private package from the repository with:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\client.ps1 -Action ExportCredentials -CredentialsFile .\.azure-local\runtime.env
+```
+
+The output is `.client-transfer\MLOps-Client-Setup.zip`, protected with Windows
+permissions and excluded from Git and Docker builds. Transfer it only to the
+intended client through a secure file-sharing method. An existing export directory
+is never overwritten. To use a separate credentials file without the ZIP:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\install-client.ps1 -CredentialsFile 'C:\Private\credentials.env'
+```
+
+Import requires the full credential set in unquoted `KEY=value` format, using
+URL-safe values (`A-Z`, `a-z`, digits, `_`, `-`, `=`). The exported package handles
+this automatically for this project's existing credentials. Invalid/incomplete
+input stops setup without printing secret values. Reruns accept the same credentials;
+an installation with different passwords is not overwritten. Changing a previously
+installed client's database or Airflow passwords requires a separate migration.
+
+Shared keys also grant access to the owner's hosted application wherever those
+same keys are accepted. Revoking one client's shared access independently would
+require separate keys. Sharing these credentials does not synchronize the two
+installations' datasets/models or transfer the owner's Azure/GitHub accounts.
+
+### Generate new credentials instead
 
 Open **Windows PowerShell** and paste:
 
@@ -89,16 +134,17 @@ so use a trusted PC with a protected Windows account.
 
 ## Credentials, data and ownership
 
-`.client\.env` contains independent API/admin keys, database passwords, Airflow's
+`.client\.env` contains the imported or generated API/admin keys, database passwords, Airflow's
 administrator password, web secret and Fernet encryption key. `.client\CREDENTIALS.txt`
 provides login instructions. Windows permissions restrict this directory to the
 installing user, Windows administrators and SYSTEM; both Git and Docker build
 contexts exclude it. These files are private plaintext, not a password vault.
 Never email/commit them or put them in an ordinary shared folder.
 
-The client owns this local installation and its generated credentials. This does
-not transfer ownership of the source GitHub repository or the original Azure
-subscription. No original owner's credentials are copied.
+The client controls this local installation. With the private package, its project
+credentials match the owner's credentials; without an import they are generated
+independently. Neither option transfers ownership of the source GitHub repository
+or the original Azure subscription.
 
 Database/model data live in Docker volumes prefixed `mlops-client_`. Keep a secure
 backup of **both** the entire `.client` directory and all these volumes. Stop the

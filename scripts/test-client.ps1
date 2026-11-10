@@ -34,6 +34,42 @@ try {
     $config = Read-Config $ConfigPath
     Assert ($config.API_KEY -ne $config.ADMIN_API_KEY) 'API and admin keys match'
     Assert ((Get-Acl -LiteralPath $testDirectory).AreAccessRulesProtected) 'Credentials inherited public permissions'
+    $source = Join-Path $testDirectory 'shared.env'
+    $sharedLines = foreach ($key in $CredentialNames) {
+        $sourceKey = if ($key -eq 'CLIENT_ADMIN_PASSWORD') { 'AIRFLOW_ADMIN_PASSWORD' } else { $key }
+        "$sourceKey=$($config[$key])"
+    }
+    $sharedLines += @('DATABASE_URL=mysql://remote-host/owner','AZURE_STORAGE_ACCOUNT=owner-account')
+    [IO.File]::WriteAllLines($source,[string[]]$sharedLines)
+    $script:CredentialsFile = $source
+    Initialize-Config
+    Assert ($before -ceq [IO.File]::ReadAllText($ConfigPath)) 'Matching imported credentials changed an existing install'
+    Remove-Item -LiteralPath $ConfigPath
+    Initialize-Config
+    $imported = Read-Config $ConfigPath
+    foreach ($key in $CredentialNames) { Assert ($imported[$key] -ceq $config[$key]) "Import changed $key" }
+    Assert ($imported.DATABASE_URL -ceq "mysql+pymysql://mlops:$($config.MYSQL_PASSWORD)@mysql:3306/churn_client") 'Owner database address was copied'
+    Assert ($imported.AZURE_STORAGE_ACCOUNT -eq '') 'Owner Azure configuration was copied'
+    $package = Join-Path $testDirectory 'package'
+    Export-ClientPackage $source $package
+    $exported = Read-SharedCredentials (Join-Path $package 'credentials.env')
+    Assert ($exported.Count -eq $CredentialNames.Count) 'Package contains unexpected configuration'
+    Assert ($exported.CLIENT_ADMIN_PASSWORD -ceq $config.CLIENT_ADMIN_PASSWORD) 'Airflow credential alias changed the password'
+    Assert (Test-Path -LiteralPath (Join-Path $package 'MLOps-Client-Setup.zip')) 'Private archive was not created'
+    Assert ((Get-Acl -LiteralPath $package).AreAccessRulesProtected) 'Exported package has inherited public access'
+    $snapshot = [IO.File]::ReadAllText($ConfigPath)
+    [IO.File]::WriteAllLines($source,[string[]]($sharedLines | ForEach-Object { if ($_ -match '^API_KEY=') { 'API_KEY=different-value' } else { $_ } }))
+    $rejected = $false
+    try { Initialize-Config } catch { $rejected = $true }
+    Assert $rejected 'Import overwrote existing credentials'
+    Assert ($snapshot -ceq [IO.File]::ReadAllText($ConfigPath)) 'Rejected import changed configuration'
+    foreach ($badLines in @(@('API_KEY=only-one-key'), @($sharedLines + 'API_KEY=duplicate'), @($sharedLines | ForEach-Object { if ($_ -match '^API_KEY=') { 'API_KEY=$UNSAFE_EXPANSION' } else { $_ } }))) {
+        [IO.File]::WriteAllLines($source,[string[]]$badLines)
+        $rejected = $false
+        try { Read-SharedCredentials $source | Out-Null } catch { $rejected = $true }
+        Assert $rejected 'Incomplete, duplicate or interpolated credentials were accepted'
+    }
+    $script:CredentialsFile = ''
     [IO.File]::WriteAllText($ConfigPath,'APP_PORT=8088')
     $rejected = $false
     try { Read-Config $ConfigPath | Out-Null } catch { $rejected = $true }
@@ -46,9 +82,11 @@ try {
     Write-Host 'Client script checks passed.'
 } finally {
     # Remove only these explicitly named temporary files, never a recursive computed path.
-    foreach ($name in @('.env','.env.tmp','docker.cmd')) {
+    foreach ($name in @('.env','.env.tmp','docker.cmd','shared.env','package\credentials.env','package\install-client.ps1','package\Install-MLOps.cmd','package\READ-ME.txt','package\MLOps-Client-Setup.zip')) {
         $path = Join-Path $testDirectory $name
         if (Test-Path -LiteralPath $path) { Remove-Item -LiteralPath $path }
     }
+    $packagePath = Join-Path $testDirectory 'package'
+    if (Test-Path -LiteralPath $packagePath) { Remove-Item -LiteralPath $packagePath }
     Remove-Item -LiteralPath $testDirectory
 }

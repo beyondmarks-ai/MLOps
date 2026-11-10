@@ -1,6 +1,9 @@
 # Download this file, then run it in Windows PowerShell as your normal Windows user.
 [CmdletBinding()]
-param([string]$InstallDirectory = (Join-Path $env:LOCALAPPDATA 'MLOps'))
+param(
+    [string]$InstallDirectory = (Join-Path $env:LOCALAPPDATA 'MLOps'),
+    [string]$CredentialsFile
+)
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
@@ -10,6 +13,10 @@ function Run-Native([string]$Program, [string[]]$Arguments) {
 }
 
 try {
+    if ($CredentialsFile) {
+        $CredentialsFile = [IO.Path]::GetFullPath($CredentialsFile)
+        if (-not (Test-Path -LiteralPath $CredentialsFile -PathType Leaf)) { throw 'The supplied private credentials file does not exist.' }
+    }
     if (-not [Environment]::Is64BitOperatingSystem -or $env:PROCESSOR_ARCHITECTURE -eq 'ARM64') {
         throw 'This installer supports x64 Windows only.'
     }
@@ -71,7 +78,7 @@ try {
     }
     $controller = Join-Path $InstallDirectory 'scripts\client.ps1'
     if (-not (Test-Path -LiteralPath $controller)) { throw 'This checkout predates the client installer. Update it before continuing.' }
-    & $controller -Action Install
+    & $controller -Action Install -CredentialsFile $CredentialsFile
     if (-not $?) { throw 'Local setup did not finish. Rerun after resolving the reported error.' }
 } catch {
     Write-Host "Setup stopped: $($_.Exception.Message)" -ForegroundColor Red

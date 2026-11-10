@@ -1,10 +1,65 @@
 [CmdletBinding()]
-param([ValidateSet('Install','Start','Stop','Open','Credentials','Status','Menu')][string]$Action = 'Menu')
+param(
+    [ValidateSet('Install','Start','Stop','Open','Credentials','Status','Menu','ExportCredentials')][string]$Action = 'Menu',
+    [string]$CredentialsFile
+)
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 $Root = Split-Path $PSScriptRoot -Parent
 $PrivateDirectory = Join-Path $Root '.client'
 $ConfigPath = Join-Path $PrivateDirectory '.env'
+$CredentialNames = @('API_KEY','ADMIN_API_KEY','MYSQL_PASSWORD','MYSQL_ROOT_PASSWORD','POSTGRES_PASSWORD','AIRFLOW_SECRET_KEY','CLIENT_ADMIN_PASSWORD','FERNET_KEY')
+
+function Read-SharedCredentials([string]$Path) {
+    $credentials = @{}
+    foreach ($line in Get-Content -LiteralPath $Path) {
+        if ($line -notmatch '^([A-Z_]+)=(.*)$') { continue }
+        $key, $value = $Matches[1], $Matches[2]
+        if ($key -eq 'AIRFLOW_ADMIN_PASSWORD') { $key = 'CLIENT_ADMIN_PASSWORD' }
+        if ($key -notin $CredentialNames) { continue }
+        if ($credentials.ContainsKey($key)) { throw "Duplicate credential: $key. Supply one value only." }
+        # Accept literal values only: shell/dotenv expansion must never alter imported secrets.
+        if ($value -notmatch '^[A-Za-z0-9_=-]+$') { throw "Unsupported format for $key. Expected an unquoted URL-safe value; no value was imported." }
+        $credentials[$key] = $value
+    }
+    foreach ($key in $CredentialNames) {
+        if (-not $credentials.ContainsKey($key)) { throw "Credentials file is missing $key. Supply the complete project credential set." }
+    }
+    if ($credentials.API_KEY -ceq $credentials.ADMIN_API_KEY) { throw 'Prediction and administrator keys must differ.' }
+    try { $bytes = [Convert]::FromBase64String($credentials.FERNET_KEY.Replace('-','+').Replace('_','/')) }
+    catch { throw 'The imported Fernet key is invalid.' }
+    if ($bytes.Length -ne 32) { throw 'The imported Fernet key must encode 32 bytes.' }
+    return $credentials
+}
+
+function Protect-PrivateDirectory([string]$Path) {
+    New-Item -ItemType Directory -Path $Path -Force | Out-Null
+    $acl = Get-Acl -LiteralPath $Path
+    $acl.SetAccessRuleProtection($true,$false)
+    foreach ($rule in @($acl.Access)) { $acl.RemoveAccessRuleSpecific($rule) }
+    foreach ($sid in @([Security.Principal.WindowsIdentity]::GetCurrent().User.Value,'S-1-5-18','S-1-5-32-544')) {
+        $identity = [Security.Principal.SecurityIdentifier]::new($sid)
+        $rule = [Security.AccessControl.FileSystemAccessRule]::new($identity,'FullControl','ContainerInherit,ObjectInherit','None','Allow')
+        $acl.AddAccessRule($rule)
+    }
+    # Write the DACL only; Set-Acl can also request unavailable audit privileges.
+    ([IO.DirectoryInfo]::new($Path)).SetAccessControl($acl)
+}
+
+function Export-ClientPackage([string]$Source, [string]$Destination) {
+    $credentials = Read-SharedCredentials $Source
+    if (Test-Path -LiteralPath $Destination) { throw 'The private package directory already exists. Keep the existing package or move it before exporting again.' }
+    Protect-PrivateDirectory $Destination
+    $lines = foreach ($key in $CredentialNames) { "$key=$($credentials[$key])" }
+    [IO.File]::WriteAllLines((Join-Path $Destination 'credentials.env'),[string[]]$lines,[Text.UTF8Encoding]::new($false))
+    Copy-Item -LiteralPath "$PSScriptRoot\install-client.ps1" -Destination $Destination
+    $launcher = "@echo off`r`npowershell.exe -NoProfile -ExecutionPolicy Bypass -File `"%~dp0install-client.ps1`" -CredentialsFile `"%~dp0credentials.env`"`r`npause`r`n"
+    [IO.File]::WriteAllText((Join-Path $Destination 'Install-MLOps.cmd'),$launcher,[Text.UTF8Encoding]::new($false))
+    [IO.File]::WriteAllText((Join-Path $Destination 'READ-ME.txt'),"PRIVATE: contains the owner's live project credentials. Share only with the intended client using a secure file transfer. Extract all files into a private folder, then double-click Install-MLOps.cmd. Approve Windows/Docker prompts; after any requested restart run the same launcher again. Existing installations with different credentials are not overwritten. This ZIP is not encrypted. See https://github.com/beyondmarks-ai/MLOps/blob/main/docs/client-install.md")
+    $files = @('credentials.env','install-client.ps1','Install-MLOps.cmd','READ-ME.txt') | ForEach-Object { Join-Path $Destination $_ }
+    Compress-Archive -LiteralPath $files -DestinationPath (Join-Path $Destination 'MLOps-Client-Setup.zip')
+    Write-Host "Private package created: $Destination\MLOps-Client-Setup.zip"
+}
 
 function New-Secret([switch]$Fernet) {
     $bytes = New-Object byte[] 32
@@ -74,22 +129,26 @@ function Get-DockerOSType {
 }
 
 function Initialize-Config {
-    if (Test-Path -LiteralPath $ConfigPath) { return }
+    $imported = if ($CredentialsFile) { Read-SharedCredentials $CredentialsFile } else { $null }
+    if (Test-Path -LiteralPath $ConfigPath) {
+        if ($imported) {
+            $existing = Read-Config $ConfigPath
+            foreach ($key in $CredentialNames) {
+                if ($existing[$key] -cne $imported[$key]) { throw 'This installation uses different credentials. Import is only supported for a fresh installation; existing database and Airflow passwords will not be overwritten.' }
+            }
+        }
+        return
+    }
     $volumes = & $script:Docker volume ls --filter label=com.docker.compose.project=mlops-client --format '{{.Name}}'
     if ($LASTEXITCODE -ne 0) { throw 'Could not check existing data volumes.' }
     if ($volumes) { throw 'Existing client data has no credentials file. Restore the original .client folder; setup will not replace database passwords.' }
-    New-Item -ItemType Directory -Path $PrivateDirectory -Force | Out-Null
-    $acl = New-Object Security.AccessControl.DirectorySecurity
-    $acl.SetAccessRuleProtection($true,$false)
-    foreach ($sid in @([Security.Principal.WindowsIdentity]::GetCurrent().User.Value,'S-1-5-18','S-1-5-32-544')) {
-        $identity = [Security.Principal.SecurityIdentifier]::new($sid)
-        $rule = [Security.AccessControl.FileSystemAccessRule]::new($identity,'FullControl','ContainerInherit,ObjectInherit','None','Allow')
-        $acl.AddAccessRule($rule)
-    }
-    Set-Acl -LiteralPath $PrivateDirectory -AclObject $acl
+    Protect-PrivateDirectory $PrivateDirectory
     $config = [ordered]@{}
     foreach ($name in @('API_KEY','ADMIN_API_KEY','MYSQL_PASSWORD','MYSQL_ROOT_PASSWORD','POSTGRES_PASSWORD','AIRFLOW_SECRET_KEY','CLIENT_ADMIN_PASSWORD')) { $config[$name] = New-Secret }
     $config.FERNET_KEY = New-Secret -Fernet
+    if ($imported) {
+        foreach ($key in $CredentialNames) { $config[$key] = $imported[$key] }
+    }
     $config.DATABASE_URL = "mysql+pymysql://mlops:$($config.MYSQL_PASSWORD)@mysql:3306/churn_client"
     $config.MODEL_NAME = 'ClientChurnModel'
     $config.APP_PORT = Find-FreePort 8088
@@ -116,7 +175,7 @@ Airflow password: $($config.CLIENT_ADMIN_PASSWORD)
 MLflow: http://127.0.0.1:$($config.MLFLOW_PORT)
 Database passwords and Fernet key: .env in this same private folder.
 Keep a private backup of this folder AND your Docker volumes. Neither alone is a full backup.
-These credentials belong to this installation. Azure/GitHub sign-in is not required.
+These credentials are configured for this installation and may be shared with the project owner. Azure/GitHub sign-in is not required.
 "@
     [IO.File]::WriteAllText((Join-Path $PrivateDirectory 'CREDENTIALS.txt'),$credentials,[Text.UTF8Encoding]::new($false))
     $desktop = Join-Path ([Environment]::GetFolderPath('Desktop')) 'MLOps Local'
@@ -147,6 +206,12 @@ function Wait-App($config) {
 }
 
 function Main {
+    if ($CredentialsFile -and $Action -notin @('Install','ExportCredentials')) { throw '-CredentialsFile applies only to Install or ExportCredentials.' }
+    if ($Action -eq 'ExportCredentials') {
+        if (-not $CredentialsFile) { throw 'Supply -CredentialsFile with the existing project runtime.env or .env path.' }
+        Export-ClientPackage $CredentialsFile (Join-Path $Root '.client-transfer')
+        return
+    }
     if ($Action -eq 'Menu') {
         Write-Host 'MLOps Local: 1 Start | 2 Stop | 3 Open dashboard | 4 Credentials | 5 Status | 6 Resume install'
         $choice = Read-Host 'Choose 1-6'

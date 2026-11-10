@@ -88,3 +88,4 @@ data/*.db
 data/predictions.csv
 mlflow.db
 .client/
+.client-transfer/

@@ -1,7 +1,7 @@
 # Setup
 
 For a new Windows client PC, follow [the automatic local setup guide](client-install.md).
-It includes dependency installation, fresh credentials, a trained public demo and
+It includes dependency installation, imported or fresh credentials, a trained public demo and
 desktop controls. The manual development instructions below are separate.
 
 See [README](../README.md) for local Python tests and Docker startup and [Azure operations](azure-operations.md) for the deployed environment, credentials, redeployment, backups and cost controls.
