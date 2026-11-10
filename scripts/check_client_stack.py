@@ -113,7 +113,7 @@ def main():
         "client-setup",
         "-c",
         "from airflow.www.app import cached_app\nimport os\n"
-        "app=cached_app()\nwith app.app_context():\n"
+        "app=cached_app()\nwith app.test_request_context('/'):\n"
         " assert app.appbuilder.sm.auth_user_db('admin', os.environ['CLIENT_ADMIN_PASSWORD'])",
     )
     compose("stop")

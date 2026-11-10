@@ -38,6 +38,15 @@ try {
         Write-Host 'WSL installation requested. Restart Windows, then rerun this same installer to continue.'
         exit 0
     }
+    $wslText = ($wslVersion | Out-String).Replace([string][char]0,'')
+    if ($wslText -notmatch '\b(\d+\.\d+\.\d+(?:\.\d+)?)\b') {
+        throw 'Cannot verify the WSL version. Run wsl --update in an administrator terminal and retry.'
+    }
+    if ([version]$Matches[1] -lt [version]'2.1.5') {
+        Write-Host 'Updating WSL for Docker Desktop. Approve the administrator prompt.'
+        $wslUpdate = Start-Process -FilePath "$env:SystemRoot\System32\wsl.exe" -ArgumentList '--update' -Verb RunAs -Wait -PassThru -WindowStyle Hidden
+        if ($wslUpdate.ExitCode -ne 0) { throw 'WSL update did not finish. Restart Windows if requested, then rerun setup.' }
+    }
     # winget handles UAC; do not switch the entire installation to another Windows account.
     if (-not (Get-Command git.exe -ErrorAction SilentlyContinue)) {
         Run-Native winget.exe @('install','--id','Git.Git','--exact','--source','winget','--accept-source-agreements','--accept-package-agreements')

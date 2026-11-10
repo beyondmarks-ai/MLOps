@@ -9,6 +9,7 @@ they do not establish accuracy for the client's customers.
 ## Requirements
 
 - Supported x64 Windows 11 (23H2 or newer), hardware virtualization enabled.
+- WSL 2.1.5 or newer; setup requests installation/update when necessary.
 - At least 8 GB RAM; **16 GB recommended**, with approximately 8 GB available to
   Docker during training. At least 30 GB free for images and data; allow more as
   datasets/models accumulate. Docker normally stores data on the Windows system drive.
