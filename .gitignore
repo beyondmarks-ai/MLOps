@@ -87,3 +87,4 @@ k8s/secrets.yaml
 data/*.db
 data/predictions.csv
 mlflow.db
+.client/

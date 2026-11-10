@@ -12,3 +12,4 @@ __pycache__
 .pytest_cache
 output
 tmp
+.client

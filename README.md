@@ -16,6 +16,10 @@ An automated, authenticated churn prediction system using Python, FastAPI, sciki
 
 ## Quick start
 
+**Installing on a client's Windows PC?** Use the [automatic local installer](docs/client-install.md).
+It installs Git/Docker prerequisites, clones this repository, creates private client-owned
+credentials, trains the public demo, and adds local Start/Stop shortcuts. No Azure account is required.
+
 On this Windows computer, double-click [Backend-Control.cmd](Backend-Control.cmd) for **Start backend**, **Stop backend**, **Refresh**, and **Open App**. It uses your Azure CLI login. Start waits for application readiness; Stop deallocates the VM to stop compute billing. Closing the launcher does not stop the VM. Disk/IP/storage charges remain. See [on-demand operation](docs/azure-operations.md#on-demand-windows-launcher).
 
 Python 3.11 is used for development and deployment. Airflow runs in its Linux container.
