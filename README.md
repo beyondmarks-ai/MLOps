@@ -2,9 +2,17 @@
 
 An application that predicts whether a customer is likely to leave a service. It includes a dashboard, a prediction API, model training, model history, and scheduled monitoring.
 
-**Installing for a client using the project owner's credentials? Get the private `Install-MLOps.cmd` file and double-click it.** This one file sets up the application on the client's Windows PC. No ZIP extraction, separate credentials file, Azure subscription, or separate Python installation is needed.
+**Recommended for the client: use the Azure application in a browser.** No installation, Git clone, Docker, Python, or Azure login is needed on the client's PC. This is the selected option for the PC reporting 7.34 GB RAM.
 
-[Install on Windows](#install-on-windows) · [Start and stop](#start-and-stop-the-application) · [Troubleshooting](#troubleshooting) · [Owner instructions](#for-the-project-owner) · [Technical documentation](#technical-documentation)
+1. The project owner starts the Azure backend using **Backend-Control.cmd**.
+2. The client opens **https://churn-mlops-617db570.centralindia.cloudapp.azure.com**.
+3. Enter the application key supplied privately by the owner, click **Refresh status**, and try **Get prediction**.
+
+Follow the [browser client guide](docs/browser-client.md) for the complete workflow. The app is unavailable while the VM is stopped; the owner should deallocate it after use to reduce compute costs.
+
+**Optional local installation:** the instructions below are for running the full stack on a sufficiently powerful Windows PC. The private `Install-MLOps.cmd` file installs everything locally and includes the owner's project credentials. Browser clients do not need it.
+
+[Browser client guide](docs/browser-client.md) · [Optional Windows install](#install-on-windows) · [Local Start and Stop](#start-and-stop-the-application) · [Troubleshooting](#troubleshooting) · [Technical documentation](#technical-documentation)
 
 ## What the application does
 
@@ -185,6 +193,7 @@ The application uses **FastAPI**, **scikit-learn**, **Optuna**, **MLflow**, **Ap
 
 | Guide | What it covers |
 |---|---|
+| [Browser client guide](docs/browser-client.md) | Recommended Azure-backed access with no client installation |
 | [Windows client setup](docs/client-install.md) | Detailed installation, credential import, recovery, and local operation |
 | [Azure operations](docs/azure-operations.md) | Cloud deployment, access, backups, and costs |
 | [Current project report coverage](docs/report02-current-coverage.md) | Implemented report requirements and remaining limitations |
